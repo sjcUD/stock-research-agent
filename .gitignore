@@ -18,3 +18,10 @@
 .DS_Store
 .idea/
 .vscode/
+
+# Local planning and research artifacts (not part of the source submission)
+.superpowers/
+deliverables/
+docs/
+learning/
+research/
