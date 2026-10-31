@@ -136,9 +136,9 @@ QDRANT_INTEGRATION=true mvn -pl stock-agent-rag -am \
   -Dtest=QdrantLiveIntegrationTest -Dsurefire.failIfNoSpecifiedTests=false test
 ```
 
-真实 Embedding 使用 OpenAI 兼容接口，配置方式见 [.env.example](.env.example)。配置
-`STOCK_AGENT_EMBEDDING_API_KEY` 后，Web 模块会创建 Embedding 网关；
-`STOCK_AGENT_EMBEDDING_BASE_URL` 可切换到其他兼容服务，已兼容 DashScope 的路径前缀。
+真实 Embedding 使用 Spring AI 的 `OpenAiEmbeddingModel`，配置方式见 [.env.example](.env.example)。
+DashScope 等兼容服务保留完整的 `/compatible-mode/v1` base URL，并显式设置
+`embeddingsPath("/embeddings")`，避免 Spring AI 默认 `/v1/embeddings` 覆盖路径前缀。
 
 ## 代码约定
 
