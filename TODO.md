@@ -30,6 +30,7 @@
 - [x] 配置真实外部 Embedding provider 并完成 API 联调
 - [x] 完成真实 Embedding → Qdrant → 检索 → Citation 端到端联调
 - [x] 增加 RAG 文档入库和检索 Web API
+- [x] 将聊天研究 Agent 接入 RAG 检索证据
 - [ ] 完善预算、超时、取消和有限重试链路
 - [ ] 增加技术面、新闻、情绪分析师
 - [ ] 实现分析师协作与组合决策流程

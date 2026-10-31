@@ -138,6 +138,14 @@ GET  /api/rag/search?q=收入增长&topK=5
 
 检索响应中的 `citation` 包含文档 ID、版本、页码和原文偏移，可直接用于前端来源展示。
 
+聊天研究接口：
+
+```text
+POST /api/research/chat
+```
+
+接口先检索 RAG 证据，再把行情快照和证据交给基本面分析师，响应同时返回回答和证据列表。该接口在研究 Agent、RAG VectorStore 和 ChatModel 都完成装配后启用。
+
 运行记录的 MySQL JDBC 实现位于 `stock-agent-runtime`，生产装配时将 `ResearchRunRepository` 替换为 `JdbcResearchRunRepository`，并执行 `src/main/resources/db/migration/V1__baseline.sql`。
 
 真实 Qdrant 联调需要本地 Qdrant 的 HTTP 6333 和 gRPC 6334 端口，并使用：

@@ -22,6 +22,11 @@ public class FundamentalsAnalyst {
 
     /** 将结构化工具事实放入模型上下文并返回分析报告。 */
     public String analyze(MarketSnapshot snapshot) {
+        return analyze(snapshot, "");
+    }
+
+    /** 将行情和 RAG 证据一起放入模型上下文。 */
+    public String analyze(MarketSnapshot snapshot, String evidence) {
         if (snapshot == null) {
             throw new IllegalArgumentException("snapshot 不能为空");
         }
@@ -30,6 +35,7 @@ public class FundamentalsAnalyst {
                 + "，收盘价=" + snapshot.getClose()
                 + "，数据日期=" + snapshot.getAsOf()
                 + "，来源=" + snapshot.getSource()
+                + "。以下是可引用的检索证据：" + (evidence == null ? "" : evidence)
                 + "。如果缺少财报数据，请明确说明。";
         return chatModel.chat(prompt);
     }
