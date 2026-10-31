@@ -1,0 +1,8 @@
+{
+  "name": "stock-research-workspace",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test:ui": "node --check stock-agent-web/src/main/resources/static/assets/app.js && node --check stock-agent-web/src/main/resources/static/assets/api.js && node --test frontend-tests/*.test.mjs"
+  }
+}

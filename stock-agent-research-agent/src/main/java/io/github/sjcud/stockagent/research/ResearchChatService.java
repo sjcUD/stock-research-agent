@@ -38,6 +38,12 @@ public class ResearchChatService {
 
     /** 带取消信号的研究请求；每个请求拥有独立预算账本。 */
     public ResearchChatAnswer ask(String question, MarketSnapshot snapshot, BooleanSupplier cancelled) {
+        return ask(question,snapshot,cancelled,ResearchProgressListener.NONE);
+    }
+    /** 资料问答观察入口，检索和回答状态均由实际执行位置通知。 */
+    public ResearchChatAnswer ask(String question, MarketSnapshot snapshot, BooleanSupplier cancelled,
+                                  ResearchProgressListener progress) {
+        progress.onProgress("RETRIEVAL","","STARTED");
         BudgetLedger ledger = new BudgetLedger(3, System.currentTimeMillis() + 30000L, 6000);
         List<RetrievalHit> hits;
         try {
@@ -46,14 +52,17 @@ public class ResearchChatService {
         } catch (Exception exception) {
             throw new IllegalStateException("RAG 检索失败", exception);
         }
+        progress.onProgress("RETRIEVAL","","COMPLETED");
         StringBuilder evidence = new StringBuilder();
         for (RetrievalHit hit : hits) {
             evidence.append("[片段=").append(hit.getChunkId()).append("] ")
                     .append(hit.getText()).append("；");
         }
         try {
-            String answer = executor.execute(() -> analyst.analyze(snapshot, evidence.toString()),
+            progress.onProgress("ANSWER","","STARTED");
+            String answer = executor.execute(() -> analyst.analyze(question,snapshot, evidence.toString()),
                     ledger, 2, 100L, cancelled, 1500);
+            progress.onProgress("ANSWER","","COMPLETED");
             return new ResearchChatAnswer(answer, hits);
         } catch (Exception exception) {
             throw new IllegalStateException("研究模型调用失败", exception);

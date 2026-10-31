@@ -29,11 +29,15 @@ public class TikaDocumentParser implements DocumentParser {
             "text/plain",
             "text/markdown"));
 
+    /** 文本显式上限，额外读取一个字符用于识别截断，不静默丢失尾部。 */
+    private static final int MAX_TEXT_CHARACTERS = 1000000;
+    /** 已固定文本提取边界的 Tika 实例。 */
     private final Tika tika;
 
     /** 创建使用 Tika 默认解析器注册表的解析器。 */
     public TikaDocumentParser() {
         this.tika = new Tika();
+        this.tika.setMaxStringLength(MAX_TEXT_CHARACTERS + 1);
     }
 
     /** 将支持的文件内容解析成统一文本模型。 */
@@ -48,9 +52,13 @@ public class TikaDocumentParser implements DocumentParser {
         }
 
         Metadata metadata = new Metadata();
-        metadata.set(Metadata.CONTENT_TYPE, normalizedType);
+        metadata.set("Content-Type", normalizedType);
         try {
-            String text = tika.parseToString(new ByteArrayInputStream(content), metadata).trim();
+            String extracted = tika.parseToString(new ByteArrayInputStream(content), metadata);
+            if (extracted.length() > MAX_TEXT_CHARACTERS) {
+                throw new IllegalArgumentException("文档提取文本超过100万字符，请拆分后上传");
+            }
+            String text = extracted.trim();
             return new ParsedDocument(documentId, revision, text);
         } catch (IOException exception) {
             throw new IllegalArgumentException("文档读取失败", exception);

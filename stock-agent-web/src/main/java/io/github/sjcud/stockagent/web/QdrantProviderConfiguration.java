@@ -3,7 +3,7 @@ package io.github.sjcud.stockagent.web;
 import io.github.sjcud.stockagent.rag.application.RagIngestionService;
 import io.github.sjcud.stockagent.rag.chunking.FixedWindowChunkingStrategy;
 import io.github.sjcud.stockagent.rag.parser.DocumentParser;
-import io.github.sjcud.stockagent.rag.parser.PlainTextDocumentParser;
+import io.github.sjcud.stockagent.rag.parser.TikaDocumentParser;
 import io.github.sjcud.stockagent.rag.store.VectorStore;
 import io.github.sjcud.stockagent.rag.store.qdrant.QdrantVectorStore;
 import io.qdrant.client.QdrantClient;
@@ -61,10 +61,10 @@ public class QdrantProviderConfiguration {
         return new QdrantVectorStore(delegate);
     }
 
-    /** 创建首版纯文本解析器。 */
+    /** 装配支持 PDF、Office、HTML 与文本的现有 Tika 解析器。 */
     @Bean
     public DocumentParser documentParser() {
-        return new PlainTextDocumentParser();
+        return new TikaDocumentParser();
     }
 
     /** 创建确定性的固定窗口切片策略。 */

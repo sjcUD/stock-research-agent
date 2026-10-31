@@ -29,16 +29,20 @@ public class MultiResearchService {
     }
     /** 执行一次完整研究；任一角色失败即终止，不汇总不完整报告。 */
     public MultiResearchAnswer ask(String question, MarketSnapshot snapshot, ResearchMode mode) throws Exception {
-        return execute(question, snapshot, mode, "", true);
+        return execute(question, snapshot, mode, "", true,ResearchProgressListener.NONE);
     }
     /** 托管市场研究使用可追溯结构化事实，暂不混入没有历史时点元数据的通用 RAG 库。 */
     public MultiResearchAnswer ask(String question, StockResearchData data, ResearchMode mode) throws Exception {
+        return ask(question,data,mode,ResearchProgressListener.NONE);
+    }
+    /** 托管研究向工作台观察者回传真实阶段。 */
+    public MultiResearchAnswer ask(String question, StockResearchData data, ResearchMode mode, ResearchProgressListener progress) throws Exception {
         if (data == null) { throw new IllegalArgumentException("市场数据不能为空"); }
-        return execute(question, data.getSnapshot(), mode, new MarketContextFormatter().format(data), false);
+        return execute(question, data.getSnapshot(), mode, new MarketContextFormatter().format(data), false,progress);
     }
     /** 共用角色、预算和汇总流程；RAG 是否启用由入口策略决定。 */
     private MultiResearchAnswer execute(String question, MarketSnapshot snapshot, ResearchMode mode,
-                                        String marketEvidence, boolean includeRag) throws Exception {
+                                        String marketEvidence, boolean includeRag, ResearchProgressListener progress) throws Exception {
         if (question == null || question.trim().isEmpty() || snapshot == null || mode == null) {
             throw new IllegalArgumentException("问题、行情和模式不能为空");
         }
@@ -50,14 +54,19 @@ public class MultiResearchService {
         for (RetrievalHit hit : hits) {
             evidence.append("[片段=").append(hit.getChunkId()).append("] ").append(hit.getText()).append('\n');
         }
-        List<AnalystResult> results = orchestrator.run(question, snapshot, evidence.toString(), mode, ledger);
+        List<AnalystResult> results = orchestrator.run(question, snapshot, evidence.toString(), mode, ledger,progress);
         // 汇总也使用 Future 的剩余时限，避免分析师完成后经理无限等待。
         ExecutorService pool = Executors.newSingleThreadExecutor();
         Future<PortfolioDecision> future = null;
         try {
             final int tokens = manager.estimateTokens(question, results);
             future = pool.submit(() -> new HarnessCallExecutor(new FailureClassifier()).execute(
-                    () -> manager.decide(question, results), ledger, 1, 0L,
+                    () -> {
+                        progress.onProgress("MANAGER","PORTFOLIO_MANAGER","STARTED");
+                        PortfolioDecision decision=manager.decide(question,results);
+                        progress.onProgress("MANAGER","PORTFOLIO_MANAGER","COMPLETED");
+                        return decision;
+                    }, ledger, 1, 0L,
                     () -> Thread.currentThread().isInterrupted(), tokens));
             return new MultiResearchAnswer(mode, future.get(ledger.remainingMillis(), TimeUnit.MILLISECONDS), hits);
         } finally {

@@ -1,0 +1,218 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <meta name="color-scheme" content="light" />
+    <title>研股 · 研究对话</title>
+    <link rel="stylesheet" href="/assets/style.css" />
+  </head>
+  <body>
+    <svg class="sprite" aria-hidden="true" xmlns="http://www.w3.org/2000/svg">
+      <defs>
+        <symbol id="i-chat" viewBox="0 0 24 24">
+          <path
+            d="M5 4h14a2 2 0 0 1 2 2v11a2 2 0 0 1-2 2H8l-5 3V6a2 2 0 0 1 2-2Z"
+          />
+          <path d="M7 9h10M7 13h7" />
+        </symbol>
+        <symbol id="i-file" viewBox="0 0 24 24">
+          <path d="M6 3h8l5 5v13H5V3Z M14 3v6h5M8 13h8M8 17h6" />
+        </symbol>
+        <symbol id="i-search" viewBox="0 0 24 24">
+          <circle cx="10" cy="10" r="7" />
+          <path d="m15 15 6 6" />
+        </symbol>
+        <symbol id="i-arrow" viewBox="0 0 24 24">
+          <path d="M12 20V4m-7 7 7-7 7 7" />
+        </symbol>
+        <symbol id="i-clip" viewBox="0 0 24 24">
+          <path
+            d="m9 16 8-8a3 3 0 0 0-4-4L4 13a5 5 0 0 0 7 7l9-9a6 6 0 0 0-8-8L3 12"
+          />
+        </symbol>
+        <symbol id="i-chevron" viewBox="0 0 24 24">
+          <path d="m9 5 7 7-7 7" />
+        </symbol>
+        <symbol id="i-menu" viewBox="0 0 24 24">
+          <path d="M4 6h16M4 12h16M4 18h16" />
+        </symbol>
+        <symbol id="i-download" viewBox="0 0 24 24">
+          <path d="M12 3v12m-5-5 5 5 5-5M4 16v5h16v-5" />
+        </symbol>
+        <symbol id="i-close" viewBox="0 0 24 24">
+          <path d="m5 5 14 14M19 5 5 19" />
+        </symbol>
+      </defs>
+    </svg>
+    <div class="app">
+      <aside class="sidebar" id="sidebar" aria-label="研究导航">
+        <a class="brand" href="/" aria-label="研股首页"
+          ><span class="brandmark" aria-hidden="true"
+            ><i></i><i></i><i></i></span
+          ><span>研股</span></a
+        >
+        <button class="new-research" id="new-research">
+          <span class="plus">＋</span>新研究<span class="shortcut">⌘ K</span>
+        </button>
+        <nav>
+          <button class="nav-button active" id="nav-chat">
+            <svg class="icon"><use href="#i-chat" /></svg>研究对话</button
+          ><button class="nav-button" id="nav-reports">
+            <svg class="icon"><use href="#i-file" /></svg>我的报告</button
+          ><button class="nav-button" id="nav-documents">
+            <svg class="icon"><use href="#i-clip" /></svg>研究资料
+          </button>
+        </nav>
+        <div class="history-heading">
+          最近研究<button id="search-history" aria-label="搜索研究记录">
+            <svg class="icon"><use href="#i-search" /></svg>
+          </button>
+        </div>
+        <input
+          id="history-filter"
+          class="history-filter"
+          placeholder="搜索代码或问题"
+          aria-label="搜索代码或问题"
+          hidden
+        />
+        <div id="history" class="history-list"></div>
+        <div class="sidebar-footer">
+          <span class="local-avatar">研</span>
+          <div>本地学习工作台<small>会话保存在此浏览器</small></div>
+        </div>
+      </aside>
+      <main class="main">
+        <header class="topbar">
+          <div class="top-left">
+            <button class="mobile-menu" id="menu" aria-label="打开研究导航">
+              <svg class="icon"><use href="#i-menu" /></svg></button
+            ><span id="conversation-title">新的研究对话</span
+            ><span id="save-state" class="save-state">本地保存</span>
+          </div>
+          <div class="top-actions">
+            <span id="data-badge" class="badge">连接服务中</span
+            ><button class="report-button" id="full-report" disabled>
+              <svg class="icon"><use href="#i-file" /></svg>完整报告
+            </button>
+          </div>
+        </header>
+        <div id="connection-error" class="connection-error" hidden>
+          <span></span><button id="reconnect-service">重新连接</button>
+        </div>
+        <section class="conversation" id="conversation" aria-label="研究对话">
+          <div class="welcome" id="welcome">
+            <span class="welcome-mark brandmark" aria-hidden="true"
+              ><i></i><i></i><i></i
+            ></span>
+            <h1>今天，想研究什么？</h1>
+            <p>从行情、事件到风险，让每个判断都有迹可循。</p>
+            <div class="welcome-options">
+              <button
+                data-prompt="结合当前日线和技术指标，分析走势与风险，每位分析师简要回答。"
+              >
+                <svg class="icon"><use href="#i-chat" /></svg
+                >看看走势与风险</button
+              ><button
+                data-prompt="近期新闻有哪些影响？区分已发生的事实、推断和仍需核验的信息。"
+              >
+                <svg class="icon"><use href="#i-file" /></svg
+                >梳理近期事件</button
+              ><button id="welcome-upload">
+                <svg class="icon"><use href="#i-clip" /></svg>读一份研究资料
+              </button>
+            </div>
+            <p class="welcome-hint" id="welcome-hint">
+              请选择证券与研究日期，再写下你的问题。
+            </p>
+          </div>
+          <div
+            id="messages"
+            class="messages"
+            aria-live="polite"
+            aria-relevant="additions text"
+          ></div>
+        </section>
+        <div class="composer-wrap">
+          <div class="composer-inner">
+            <div id="followups" class="suggestions" hidden>
+              <button data-prompt="进一步解释技术指标及其局限。">
+                展开技术分析</button
+              ><button data-prompt="有哪些信息会改变上一轮结论？">
+                什么会改变结论？</button
+              ><button data-prompt="明确列出当前缺少的数据与下一步核验事项。">
+                说明数据缺口
+              </button>
+            </div>
+            <form id="question-form" class="composer">
+              <div class="context-controls">
+                <label
+                  >证券<input
+                    id="symbol"
+                    value="600519"
+                    maxlength="12"
+                    aria-label="证券代码"
+                    autocomplete="off" /></label
+                ><span class="context-divider"></span
+                ><label
+                  >研究日期<input
+                    id="as-of"
+                    type="date"
+                    aria-label="研究日期" /></label
+                ><span id="context-lock" class="context-lock" hidden
+                  >追问沿用当前范围</span
+                >
+              </div>
+              <textarea
+                id="question"
+                maxlength="1000"
+                rows="2"
+                placeholder="写下你的研究问题…"
+                aria-label="研究问题"
+              ></textarea>
+              <div class="composer-tools">
+                <button
+                  type="button"
+                  id="attach"
+                  title="上传或查看研究资料"
+                  aria-label="上传或查看研究资料"
+                >
+                  <svg class="icon"><use href="#i-clip" /></svg></button
+                ><label class="scope-select"
+                  ><select id="scope" aria-label="资料范围">
+                    <option value="MARKET">市场研究</option>
+                    <option value="DOCUMENTS">资料问答</option>
+                  </select></label
+                ><span id="scope-hint">行情 · 指标 · 最近资讯</span
+                ><button type="button" id="cancel" class="cancel-button" hidden>
+                  停止研究</button
+                ><button
+                  class="send"
+                  id="send"
+                  aria-label="发送研究问题"
+                  disabled
+                >
+                  <svg class="icon"><use href="#i-arrow" /></svg>
+                </button>
+              </div>
+            </form>
+            <div class="composer-note" id="composer-note">
+              研究结论用于学习与核验；资料范围和数据日期会随回答保留。
+            </div>
+          </div>
+        </div>
+      </main>
+    </div>
+    <dialog id="drawer" class="drawer" aria-labelledby="drawer-title">
+      <div class="drawer-top">
+        <h2 id="drawer-title"></h2>
+        <button id="close-drawer" aria-label="关闭面板">
+          <svg class="icon"><use href="#i-close" /></svg>
+        </button>
+      </div>
+      <div id="drawer-content"></div>
+    </dialog>
+    <div id="toast" role="status" class="toast" hidden></div>
+    <script type="module" src="/assets/app.js"></script>
+  </body>
+</html>

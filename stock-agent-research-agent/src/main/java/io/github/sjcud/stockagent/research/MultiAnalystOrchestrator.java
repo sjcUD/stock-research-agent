@@ -46,6 +46,11 @@ public class MultiAnalystOrchestrator {
     /** 调用方可将检索、分析师和组合经理绑定到同一预算账本。 */
     public List<AnalystResult> run(String question, MarketSnapshot snapshot, String evidence,
                                   ResearchMode mode, BudgetLedger ledger) throws Exception {
+        return run(question,snapshot,evidence,mode,ledger,ResearchProgressListener.NONE);
+    }
+    /** 附带真实角色进度的编排；观察者必须可并发调用。 */
+    public List<AnalystResult> run(String question, MarketSnapshot snapshot, String evidence,
+            ResearchMode mode, BudgetLedger ledger, ResearchProgressListener progress) throws Exception {
         if (question == null || question.trim().isEmpty() || snapshot == null || mode == null || ledger == null) {
             throw new IllegalArgumentException("研究输入不能为空");
         }
@@ -57,10 +62,12 @@ public class MultiAnalystOrchestrator {
             List<AnalystResult> results = new ArrayList<AnalystResult>();
             for (final ResearchAnalyst analyst : analysts) {
                 futures.add(completed.submit(() -> harness.execute(() -> {
+                    progress.onProgress("ANALYST",analyst.getRole().name(),"STARTED");
                     AnalystResult result = analyst.analyze(question, snapshot, evidence);
                     if (result == null || result.getRole() != analyst.getRole()) {
                         throw new IllegalStateException("分析师返回角色与注册角色不一致");
                     }
+                    progress.onProgress("ANALYST",analyst.getRole().name(),"COMPLETED");
                     return result;
                 }, ledger, 1, 0L, () -> Thread.currentThread().isInterrupted(),
                         analyst.estimateTokens(question, snapshot, evidence))));

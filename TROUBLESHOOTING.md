@@ -96,3 +96,12 @@ MULTI_RESEARCH_INTEGRATION=true mvn -pl stock-agent-web -am \
 - 模型仍通过 Spring AI `OpenAiApi` 适配，不新增手写模型 HTTP 网关。市场数据传输与模型传输各自明确选择，避免 classpath 新依赖无意改变已有行为。
 - Java 编译未保留方法参数名时，`@RequestParam` 必须显式写 `symbol` 和 `asOf`；直接调用控制器的单元测试无法发现该绑定错误，因此增加随机本地端口的真实 MVC HTTP 回归。
 - 腾讯未复权日线 `param` 的最后一个复权参数为空，末尾逗号仍必须保留；东方财富新闻 JSONP 使用固定回调，禁止执行脚本，也不宽松截取任意括号。资讯时间语义保留原始精度，公告 `notice_date` 不用较早的 `display_time` 替换。
+
+## P10：取消、长文档与入口脚本验证（2026-11-01）
+
+- 停止按钮不能等下一个轮询GET成功再发DELETE：网络挂起时会继续后台研究。独立TaskChannel保存取消意图，拿到任务ID即发送取消，GET/POST设置有限等待；终态不接受迟到快照回退，失败时保留同ID重连。
+- Future.cancel不会自动从ThreadPoolExecutor有界队列移除已取消任务。取消后purge，避免队列明明已取消仍拒绝新研究；有填满队列后取消并重新入队的回归。
+- Tika默认parseToString可能只返回前100000字符。显式允许读取100万+1字符，在trim之前检查上限，超限拒绝，避免假“索引完成”。长文档尾部进入切片、PDF/Word/Excel解析均有回归。
+- 新上传入口会真正处理PDF；按[Apache官方安全说明](https://tika.apache.org/security.html)升级现有Tika至3.3.3，包含既有PDF XFA XXE修复。不把其他解析风险宣称为已全面审计。
+- 纯函数测试不能证明入口脚本可解析。整理注释时曾误将async与function断开；已修复并把node --check入口及API脚本加入test:ui。
+- 资料问答必须把用户具体问题传给模型；仅用它检索而让模型继续输出固定基本面模板，会偏离问题。资料问答独立于行情源，未知市场报价明确不提供，不编造数值。

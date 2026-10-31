@@ -15,7 +15,7 @@
 
 当前多分析师是提示词角色，调度采用 Java 执行器，尚未通过 Alibaba Graph 构建完整协作图。P9 已接入日线、技术指标及最近资讯；完整财报、实时分时和社交情绪样本尚未接入。只有一个收盘价时，角色应说明无法计算 MACD、RSI 等指标。它们不会自动获得不存在的数据，也不会执行真实交易。
 
-已接通过真实 ChatModel、Embedding、Qdrant 和 MySQL 的基础联调。真实日线已接入；聊天前端、会话持久化和接入聊天链路的上下文压缩尚未完成。完整进度与后续工作见 [TODO.md](TODO.md)，模型兼容性经验见 [TROUBLESHOOTING.md](TROUBLESHOOTING.md)。
+已接通过真实 ChatModel、Embedding、Qdrant 和 MySQL 的基础联调。真实日线已接入；P10 浅色聊天工作台已实现；会话目前保存在浏览器，MySQL会话持久化和接入聊天链路的上下文压缩尚未完成。完整进度与后续工作见 [TODO.md](TODO.md)，模型兼容性经验见 [TROUBLESHOOTING.md](TROUBLESHOOTING.md)。
 
 ## 模块
 
@@ -46,7 +46,7 @@ export STOCK_AGENT_QDRANT_ENABLED=true
 mvn -pl stock-agent-web spring-boot:run
 ```
 
-应用默认地址：`http://localhost:8080`。当前提供 API，尚无完整聊天页面。Qdrant 默认使用 gRPC 6334；如果本机 MySQL 端口为 3307，JDBC URL 需相应调整。数据库表结构见 `stock-agent-runtime/src/main/resources/db/migration/V1__baseline.sql`。
+应用默认地址：`http://localhost:8080`。打开根地址即可使用聊天工作台，前端与API同源，不需要启动独立Node服务。Qdrant 默认使用 gRPC 6334；如果本机 MySQL 端口为 3307，JDBC URL 需相应调整。数据库表结构见 `stock-agent-runtime/src/main/resources/db/migration/V1__baseline.sql`。
 
 ```text
 GET  /api/market/data            服务端行情、指标、新闻与公告
@@ -104,7 +104,7 @@ QDRANT_INTEGRATION=true mvn -pl stock-agent-rag -am \
 
 模型 Base URL 和路径兼容配置参见 [TROUBLESHOOTING.md](TROUBLESHOOTING.md)。DashScope Embedding 保留完整 `/compatible-mode/v1` Base URL，并显式设置 `embeddingsPath("/embeddings")`。
 
-下一阶段为 P10 聊天前端；同时保留 P6/P7 中尚未完成的会话持久化、模型 HTTP 超时、阶段预算和上下文压缩任务。前端沿用已确定的浅色聊天交互设计。
+下一阶段为 P11 评测与质量验证；同时保留 P6/P7 中尚未完成的会话持久化、模型 HTTP 超时、阶段预算和上下文压缩任务。前端沿用已确定的浅色聊天交互设计。
 
 ## P9 市场数据与研究
 
@@ -159,3 +159,41 @@ MARKET_RESEARCH_INTEGRATION=true MARKET_DATA_AS_OF=2026-10-30 mvn -pl stock-agen
 ```
 
 P9 对应的 Agent 学习点是：工具/数据提供器边界、确定性计算与模型推断分工、asOf 防未来信息、可追溯证据、部分失败与恢复策略、限流/截止/取消，以及给多角色选择有限上下文。取数由服务端编排完成，当前不宣称分析师已自主选择所有市场工具或具备完整历史回测能力。
+
+## P10 聊天工作台
+
+按已确认 v6 的浅色两栏实现。应用启动后访问 **http://localhost:8080/**。
+
+- 在同一个对话中研究行情、指标与最近资讯，查看五位分析师和组合经理报告；研究过程默认折叠，事件来自真实后台执行位置。
+- 证券与日期在一轮对话内保持一致；新建研究可调整范围。追问只携带同范围的有限前一轮背景，不将资料问答内容自动带进市场研究。
+- 图表仅绘制后端实际返回日线，没有假基准或预测曲线；来源抽屉展示实际日期、抓取时间、覆盖限制和原文片段。
+- 在研究资料面板上传文档、等待索引确认、检索片段，显式切换“资料问答”。资料问答不需要访问行情源，不承诺历史披露时点过滤。
+- Markdown、表格和代码块经本地 Marked + DOMPurify 解析/净化；禁止远程图片及可执行HTML，来源链接只允许HTTP(S)。第三方版本与许可证位于 `static/vendor`。
+- 可停止后台研究、重新连接同一个任务ID、明确重试，或下载Markdown报告。POST不自动重试；轮询断开不会偷偷创建新的收费任务。取消发送中断信号并禁止发布迟到结果，底层SDK是否立即退出仍取决于其实现。
+
+会话保存在**当前浏览器 localStorage**，最多8个会话、每个最近10轮；这不是MySQL持久化或跨设备同步。任务记录在服务端内存中，最多2个研究同时运行、8个排队、100条记录，创建后3分钟截止、终态保留20分钟，重启后任务ID失效。当前使用轮询进度，不是逐Token流式生成。
+
+文档单文件上限10MiB，文本提取最多100万字符，超过明确拒绝并提示拆分；不静默只索引前10万字符。支持PDF、Word、Excel、HTML、TXT、Markdown，扫描图片/OCR和精确页码定位尚未完成。Tika已更新至3.3.3并验证PDF、DOCX、XLSX及长文本；原JSON入库与同步研究API继续保留。
+
+工作台接口：
+
+```text
+GET    /api/workspace                  配置能力与默认研究日期（不返回密钥）
+POST   /api/research/tasks             创建后台任务，scope=MARKET或DOCUMENTS
+GET    /api/research/tasks/{id}        查询真实阶段与成功结果
+DELETE /api/research/tasks/{id}        显式取消
+POST   /api/rag/documents/upload      multipart文件上传，file字段
+GET    /api/rag/search                检索已索引资料
+```
+
+前端源码位于 `stock-agent-web/src/main/resources/static`：`index.html`、`assets/style.css`、`assets/app.js`（交互）、`assets/api.js`（API与独立取消通道）、`assets/workspace.js`（可测试状态与图表逻辑）。静态ES模块由Spring Boot提供，不需要前端构建或CDN。
+
+运行与验证：
+
+```bash
+mvn test
+# Node18+仅用于前端测试，运行页面不需要Node或npm install
+npm run test:ui
+```
+
+P10可学习：异步任务与领域执行分离、真实进度观察、排队背压、终态不可回退、取消与迟到结果竞争、断线重连/幂等边界、有限上下文选择、证据展示与HTML净化。它没有替代P7上下文压缩，也没有宣称实现Graph状态持久化。
