@@ -51,10 +51,10 @@
 - [ ] 接入真实 ChatModel provider
   - [x] 增加 OpenAI 兼容 ChatModel 配置
   - [ ] 支持模型、Base URL、API Key 和超时配置
-  - [ ] 增加真实模型联调测试
+  - [x] 增加真实模型联调测试
 - [ ] 装配 `ResearchChatService` 到 Web 容器
   - [x] 将真实 ChatModel 注入 `FundamentalsAnalyst`
-  - [ ] 启用 `/api/research/chat`
+  - [x] 启用 `/api/research/chat` 的条件装配
   - [ ] 验证“问题 → RAG → 模型回答 → Citation”
 - [ ] 增加聊天会话和消息持久化
   - [ ] conversation 表 Repository

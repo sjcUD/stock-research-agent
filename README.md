@@ -148,6 +148,15 @@ POST /api/research/chat
 
 配置 `STOCK_AGENT_CHAT_API_KEY` 后，Web 模块会自动装配 OpenAI 兼容 ChatModel 和聊天研究服务；当前 `.env` 尚未配置 Chat API Key 时，聊天接口保持关闭。
 
+真实 ChatModel 联调：
+
+```bash
+set -a; . ./.env; set +a
+CHAT_INTEGRATION=true mvn -pl stock-agent-web -am \
+  -Dtest=ChatModelLiveIntegrationTest \
+  -Dsurefire.failIfNoSpecifiedTests=false test
+```
+
 运行记录的 MySQL JDBC 实现位于 `stock-agent-runtime`，生产装配时将 `ResearchRunRepository` 替换为 `JdbcResearchRunRepository`，并执行 `src/main/resources/db/migration/V1__baseline.sql`。
 
 真实 Qdrant 联调需要本地 Qdrant 的 HTTP 6333 和 gRPC 6334 端口，并使用：
