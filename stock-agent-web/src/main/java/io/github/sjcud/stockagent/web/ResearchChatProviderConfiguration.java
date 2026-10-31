@@ -3,6 +3,9 @@ package io.github.sjcud.stockagent.web;
 import io.github.sjcud.stockagent.llm.ChatModelGateway;
 import io.github.sjcud.stockagent.rag.store.VectorStore;
 import io.github.sjcud.stockagent.research.ResearchChatService;
+import io.github.sjcud.stockagent.research.MultiResearchService;
+import io.github.sjcud.stockagent.research.DefaultAnalystFactory;
+import io.github.sjcud.stockagent.research.PortfolioManager;
 import io.github.sjcud.stockagent.analyst.FundamentalsAnalyst;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Bean;
@@ -24,5 +27,10 @@ public class ResearchChatProviderConfiguration {
     public ResearchChatService researchChatService(VectorStore vectorStore,
                                                    FundamentalsAnalyst analyst) {
         return new ResearchChatService(vectorStore, analyst);
+    }
+    /** 创建五角色分析与组合经理汇总服务，保留单分析师入口用于学习比较。 */
+    @Bean
+    public MultiResearchService multiResearchService(VectorStore vectorStore, ChatModelGateway gateway) {
+        return new MultiResearchService(vectorStore, DefaultAnalystFactory.create(gateway), new PortfolioManager(gateway));
     }
 }

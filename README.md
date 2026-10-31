@@ -1,216 +1,104 @@
 # Stock Research Agent
 
-一个面向学习的 Java 股票研究 Agent 项目。
+面向系统学习 Agent 的 Java 股票研究项目，以 A 股为背景，采用 Maven 多模块、Spring AI 和 Spring AI Alibaba。源码保持 Java 8 风格，运行依赖使用 JDK 21；类、字段、方法和关键算法使用中文注释。
 
-项目以 A 股研究为背景，使用 Spring AI Alibaba Agent Framework 和 Spring AI Qdrant Store，逐步实现“数据获取 → 工具调用 → 分析师 → RAG 检索 → 研究结论”的完整链路。代码优先保持 Java 8 风格，重点展示 Agent 的基本组成和可扩展设计，不追求企业级平台的复杂运维能力。
+## 当前能力
 
-## 当前状态
+- 单分析师研究：问题 → RAG 检索 → 基本面回答 → 引用来源。
+- 多分析师研究：基本面、技术面、新闻、情绪、风险五个独立角色 → 组合经理汇总；支持串行和并行对照。
+- RAG：文档解析、切片、真实 Embedding、Qdrant 写入与检索、Citation 回传。
+- 解析器支持 PDF、Word、Excel、HTML、纯文本和 Markdown；目前以文本提取为主，OCR、精确页码与表格结构尚未完善。
+- Harness：调用次数预算、估算 Token 预算、截止时间检查、有限重试基础能力；多角色共享请求预算，超时和失败触发其他任务取消。
+- MySQL：运行记录 JDBC Repository 和迁移脚本；Web 创建运行接口当前默认使用内存仓储，多角色轨迹只随响应回传。
+- Spring AI Alibaba `ReactAgent` 最小工厂及工具循环学习探针。
 
-当前仓库是可编译、可测试的 Maven 多模块骨架，已经包含：
+当前多分析师是提示词角色，调度采用 Java 执行器，尚未通过 Alibaba Graph 构建完整协作图。技术指标、实时新闻和社交情绪数据工具将在 P9 接入。只有一个收盘价时，角色应说明无法计算 MACD、RSI 等指标。它们不会自动获得不存在的数据，也不会执行真实交易。
 
-- Spring AI Alibaba `ReactAgent` 的最小 Agent 工厂
-- 一个可重复运行的工具调用闭环探针
-- 基本面分析师的模型网关抽象
-- LLM、Embedding、Rerank 的统一接口和模型注册表
-- SAMPLE 数据模式和固定行情提供器
-- RAG 文档切片、检索契约与 Qdrant VectorStore 适配器
-- 基于 Apache Tika 的 PDF、Word、Excel、HTML、纯文本和 Markdown 解析器
-- Agent Harness 的预算、失败分类和上下文压缩基础实现
-- MySQL 初始迁移脚本
+已接通过真实 ChatModel、Embedding、Qdrant 和 MySQL 的基础联调。聊天前端、会话持久化、真实行情和接入聊天链路的上下文压缩尚未完成。完整进度与后续工作见 [TODO.md](TODO.md)，模型兼容性经验见 [TROUBLESHOOTING.md](TROUBLESHOOTING.md)。
 
-真实行情、真实模型、MySQL、Qdrant 和 Web 端尚未接通，当前实现用于学习和验证模块边界。
+## 模块
 
-当前任务进度见 [TODO.md](TODO.md)，每次完成任务都会同步更新已完成项和下一步。
+| 模块 | 职责 |
+| --- | --- |
+| stock-agent-contracts | 跨模块公共契约 |
+| stock-agent-data-contracts | 数据模式等领域契约 |
+| stock-agent-data-provider | SAMPLE 行情与数据提供器边界 |
+| stock-agent-llm | Chat、Embedding、Rerank 网关和模型注册 |
+| stock-agent-rag | 解析、切片、检索、引用和 Qdrant 适配 |
+| stock-agent-research-agent | 工具循环、单角色与多角色研究 |
+| stock-agent-runtime | Harness、预算和运行记录仓储 |
+| stock-agent-web | Spring 装配和 HTTP API |
 
-遇到模型兼容性问题时，先查看 [TROUBLESHOOTING.md](TROUBLESHOOTING.md) 中的踩坑记录。
+RAG 保持一个模块，内部通过接口隔离解析器、Embedding 和向量存储。MySQL 是业务记录存储，Qdrant 是首版向量存储。
 
-## 学习目标
+## 运行
 
-按下面的顺序阅读和运行，可以从简单闭环逐步理解 Agent：
-
-1. **模型调用**：理解 ChatModel、Embedding、Rerank 为什么需要独立网关。
-2. **工具调用**：观察 Agent 如何决定调用工具、接收工具结果并生成回答。
-3. **数据接入**：区分 SAMPLE 与 LIVE 数据，理解来源、时间和可追溯性。
-4. **单分析师**：把行情快照转换成结构化提示词，再交给模型分析。
-5. **RAG**：学习文档解析、切片、向量化、检索和引用信息如何衔接。
-6. **Harness**：学习预算、超时、失败分类、有限重试和上下文压缩。
-7. **多 Agent**：在单分析师稳定后，再扩展技术面、新闻、情绪和风控角色。
-
-## 模块结构
-
-```text
-stock-agent-learning/
-├── stock-agent-contracts/          # 跨模块公共契约
-├── stock-agent-data-contracts/     # 数据模式等领域枚举和契约
-├── stock-agent-llm/                # Chat/Embedding/Rerank 网关与模型注册
-├── stock-agent-rag/                # RAG 核心契约、切片、检索和 Qdrant 适配器
-├── stock-agent-data-provider/      # SAMPLE/LIVE 数据提供器边界
-├── stock-agent-research-agent/     # Agent、工具循环和分析师
-├── stock-agent-runtime/            # Harness、预算、失败处理、上下文策略
-└── stock-agent-web/                # Web/API 接入预留模块
-```
-
-模块之间通过接口协作，供应商 SDK 尽量隔离在适配层中。后续可以在同一个 `stock-agent-rag` 模块中增加其他 VectorStore 实现，而不改变上层检索接口。
-
-## 一次研究流程
-
-```text
-用户问题
-   ↓
-研究 Agent
-   ↓
-读取股票数据 / 检索文档
-   ↓
-工具结果与引用证据
-   ↓
-基本面分析师
-   ↓
-研究结论
-```
-
-运行时的 Harness 负责为模型调用预留预算，并对错误进行分类；上下文策略负责在输入过长时保留关键内容并压缩其余上下文。
-
-## 技术栈
-
-- Java 8 风格源码
-- Maven 多模块
-- Spring AI Alibaba Agent Framework `1.1.2.2`
-- Spring AI Qdrant Store `1.1.2`
-- MySQL（业务数据，迁移脚本已提供）
-- Qdrant（首版向量存储）
-- JUnit 5
-
-源码不使用 `record`、`sealed interface`、`var`、模式匹配或 `getFirst/getLast` 等较新的 Java 语法，便于按 Java 8 的方式阅读对象、接口和集合代码。
-
-## 快速开始
-
-### 环境要求
-
-- JDK 17+（当前 Spring AI 版本的运行要求）；源码保持 Java 8 风格
-- Maven 3.8+
-- 真实模型和 Qdrant 联调时，再配置对应服务地址和密钥
-
-### 编译与测试
+要求 JDK 21、Maven 3.8+。先按 [.env.example](.env.example) 配置模型和 Qdrant，不要提交真实密钥。
 
 ```bash
-cd /Users/sjc/Documents/stock
 mvn test
-```
-
-当前测试覆盖工具闭环、模型配置、数据提供器、RAG 切片、Qdrant 配置校验和 Harness 基础策略。
-
-### 运行说明
-
-当前 `stock-agent-web` 还是预留模块，仓库暂未提供可直接访问的 Web 服务。建议先从以下类开始阅读：
-
-- `stock-agent-research-agent/.../AgentToolLoopProbe.java`
-- `stock-agent-research-agent/.../analyst/FundamentalsAnalyst.java`
-- `stock-agent-research-agent/.../analyst/SingleAnalystGraphFactory.java`
-- `stock-agent-llm/.../ModelProfile.java`
-- `stock-agent-rag/.../store/qdrant/QdrantVectorStore.java`
-- `stock-agent-runtime/.../harness/BudgetLedger.java`
-- `stock-agent-runtime/.../harness/ContextPolicy.java`
-
-文档解析目前支持 PDF、Word、Excel、HTML、纯文本和 Markdown。解析器只负责提取文本，页码、表格结构和 OCR 等增强能力会在后续专用适配器中补充。
-
-## Web API
-
-Web 模块提供一个最小研究运行接口，默认使用内存仓储，便于本地启动：
-
-```bash
-mvn -pl stock-agent-web spring-boot:run
-```
-
-创建研究运行：
-
-```bash
-curl -X POST http://localhost:8080/api/research/runs \
-  -H 'Content-Type: application/json' \
-  -d '{"conversationId":1,"requestJson":"{\"symbol\":\"600519\"}"}'
-```
-
-RAG 接口在启用 Qdrant 后提供：
-
-```text
-POST /api/rag/documents   # 文档解析、切片、Embedding、Qdrant 入库
-GET  /api/rag/search?q=收入增长&topK=5
-```
-
-检索响应中的 `citation` 包含文档 ID、版本、页码和原文偏移，可直接用于前端来源展示。
-
-聊天研究接口：
-
-```text
-POST /api/research/chat
-```
-
-接口先检索 RAG 证据，再把行情快照和证据交给基本面分析师，响应同时返回回答和证据列表。该接口在研究 Agent、RAG VectorStore 和 ChatModel 都完成装配后启用。
-
-配置 `STOCK_AGENT_CHAT_API_KEY` 后，Web 模块会自动装配 OpenAI 兼容 ChatModel 和聊天研究服务；当前 `.env` 尚未配置 Chat API Key 时，聊天接口保持关闭。
-
-真实 ChatModel 联调：
-
-```bash
-set -a; . ./.env; set +a
-CHAT_INTEGRATION=true mvn -pl stock-agent-web -am \
-  -Dtest=ChatModelLiveIntegrationTest \
-  -Dsurefire.failIfNoSpecifiedTests=false test
-```
-
-启动完整 Web 应用：
-
-```bash
-set -a; . ./.env; set +a
+mvn -DskipTests install
+set -a
+. ./.env
+set +a
 export STOCK_AGENT_QDRANT_ENABLED=true
 mvn -pl stock-agent-web spring-boot:run
 ```
 
-运行记录的 MySQL JDBC 实现位于 `stock-agent-runtime`，生产装配时将 `ResearchRunRepository` 替换为 `JdbcResearchRunRepository`，并执行 `src/main/resources/db/migration/V1__baseline.sql`。
+应用默认地址：`http://localhost:8080`。当前提供 API，尚无完整聊天页面。Qdrant 默认使用 gRPC 6334；如果本机 MySQL 端口为 3307，JDBC URL 需相应调整。数据库表结构见 `stock-agent-runtime/src/main/resources/db/migration/V1__baseline.sql`。
 
-真实 Qdrant 联调需要本地 Qdrant 的 HTTP 6333 和 gRPC 6334 端口，并使用：
+```text
+POST /api/research/chat          单基本面分析师
+POST /api/research/chat/multi    五角色分析 + 组合经理
+POST /api/research/runs          创建研究运行记录（默认内存仓储）
+POST /api/rag/documents          JSON 文档入库接口
+GET  /api/rag/search?q=收入增长&topK=5
+```
+
+多角色接口示例，以下行情为 SAMPLE 演示数据：
 
 ```bash
+curl http://localhost:8080/api/research/chat/multi \
+  -H 'Content-Type: application/json' \
+  -d '{"question":"请说明样例证据支持哪些判断、还缺什么数据", "symbol":"600519", "close":"1680", "asOf":"2026-10-30", "source":"SAMPLE", "mode":"PARALLEL"}'
+```
+
+将 `mode` 改为 `SERIAL` 可比较串行执行。两种模式都独立分析同一份证据，串行时不会把前一个角色的结论传给后一个角色。
+
+响应包含 `mode`、`decision`（经理汇总与五份角色报告）、`evidence`（包含 Citation）和 `traces`（角色、实际模型输入、输出、耗时毫秒）。引用列表代表本次检索获得的证据，不等于模型已逐条验证并使用。执行轨迹包含问题与证据原文，调用方应按研究内容管理访问权限。
+
+支持 `thinking.type` 的供应商可配置 `STOCK_AGENT_CHAT_THINKING_MODE=disabled` 进行普通研究演示，或设为 `enabled` 并预留充足输出额度；留空时不发送扩展参数。真实 HTTP 验收使用 DeepSeek、2048 输出上限、显式 `disabled`。该开关通过 Spring AI `OpenAiChatOptions.extraBody` 透传，不另建 HTTP 网关。
+
+默认每次多角色请求最多六次模型调用、120 秒总截止时间、60000 估算 Token 额度。分析师按完整提示词字符数加 2048 输出预留估算，经理按报告及证据文字保守估算；并非模型真实 usage 或精确费用上限。任一角色失败即终止研究，不调用经理汇总残缺报告。Future 取消会发送线程中断；底层网络请求是否立即退出取决于 SDK，HTTP 读取超时配置仍在待办中。
+
+## 通过 P8 学习什么
+
+1. **职责隔离**：`ResearchAnalyst` 定义统一策略接口，`DefaultAnalystFactory` 组合五种职责；独立提示词避免角色共享可变聊天历史。
+2. **上下文与证据传递**：问题、行情日期及来源、RAG 片段构成角色输入；缺失数据应显式报告。
+3. **扇出与汇聚**：`MultiAnalystOrchestrator` 提供串行/并行模式，完成顺序用于发现失败，稳定角色顺序用于展示。
+4. **共享预算与生命周期**：并行角色竞争同一预算；截止时间限制等待；任一失败取消其他任务；串行失败后不会再启动后续角色。
+5. **综合判断**：`PortfolioManager` 接收所有报告和证据，保留分歧、不确定性及待核验条件。
+6. **可观测性**：`AgentTrace` 保存实际输入、输出与耗时；当前未做数据库持久化，也未记录失败轨迹。
+7. **可替换设计**：网关隔离模型供应商，角色接口便于后续接入带工具的 Agent，向量存储接口隔离 Qdrant。
+
+这一步实现的是可测试的多角色协作基础。自主工具选择、Graph 状态管理、多轮辩论、长期记忆、上下文压缩与评测需要各自独立实现和验证。
+
+## 验证
+
+`mvn test` 默认运行确定性测试，不需要模型密钥。外部集成测试显式启用：
+
+```bash
+# 先加载本地 .env，再选择所需测试
+CHAT_INTEGRATION=true mvn -pl stock-agent-web -am \
+  -Dtest=ChatModelLiveIntegrationTest -Dsurefire.failIfNoSpecifiedTests=false test
+RAG_REAL_INTEGRATION=true mvn -pl stock-agent-web -am \
+  -Dtest=RealRagQdrantIntegrationTest -Dsurefire.failIfNoSpecifiedTests=false test
+MULTI_RESEARCH_INTEGRATION=true STOCK_AGENT_QDRANT_ENABLED=true mvn -pl stock-agent-web -am \
+  -Dtest=MultiResearchLiveIntegrationTest -Dsurefire.failIfNoSpecifiedTests=false test
 QDRANT_INTEGRATION=true mvn -pl stock-agent-rag -am \
   -Dtest=QdrantLiveIntegrationTest -Dsurefire.failIfNoSpecifiedTests=false test
 ```
 
-启用 Web 应用中的真实 RAG 装配：
+模型 Base URL 和路径兼容配置参见 [TROUBLESHOOTING.md](TROUBLESHOOTING.md)。DashScope Embedding 保留完整 `/compatible-mode/v1` Base URL，并显式设置 `embeddingsPath("/embeddings")`。
 
-```env
-STOCK_AGENT_QDRANT_ENABLED=true
-STOCK_AGENT_QDRANT_HOST=localhost
-STOCK_AGENT_QDRANT_GRPC_PORT=6334
-STOCK_AGENT_QDRANT_COLLECTION=stock_agent_documents
-```
-
-端到端测试会使用真实 Embedding 写入 Qdrant，并检查检索结果携带 Citation：
-
-```bash
-set -a; . ./.env; set +a
-RAG_REAL_INTEGRATION=true mvn -pl stock-agent-web -am \
-  -Dtest=RealRagQdrantIntegrationTest \
-  -Dsurefire.failIfNoSpecifiedTests=false test
-```
-
-真实 Embedding 使用 Spring AI 的 `OpenAiEmbeddingModel`，配置方式见 [.env.example](.env.example)。
-DashScope 等兼容服务保留完整的 `/compatible-mode/v1` base URL，并显式设置
-`embeddingsPath("/embeddings")`，避免 Spring AI 默认 `/v1/embeddings` 覆盖路径前缀。
-
-## 代码约定
-
-- 类、字段、公开方法和关键算法必须有清晰的中文注释。
-- 优先使用接口、策略、工厂、适配器和组合，避免把第三方 SDK 传播到核心领域代码。
-- 数据来源、时间、检索分数和引用信息要能够随结果一起传递。
-- 先完成可测试的最小闭环，再逐步增加真实数据、真实模型和多 Agent 编排。
-- 本地凭据、构建产物、研究草稿和设计交付物不纳入版本库。
-
-## 后续路线
-
-1. 接通 Qdrant 文档写入和检索流程。
-2. 增加 MySQL Repository 与研究运行记录。
-3. 接入一个真实的 ChatModel 和 Embedding 模型。
-4. 完成技术面、新闻、情绪分析师及组合决策流程。
-5. 补充 Web API 和聊天式研究界面。
-6. 增加离线评测，比较检索质量、工具调用和上下文压缩效果。
-
-这是一个循序渐进的学习项目。每一步都应先保留一个能够独立运行和测试的最小例子，再向下一层抽象扩展。
+下一阶段接入真实 A 股行情、新闻等数据；同时保留 P6/P7 中尚未完成的会话持久化、HTTP 超时、阶段预算和上下文压缩任务。前端沿用已确定的浅色聊天交互设计。

@@ -1,0 +1,36 @@
+package io.github.sjcud.stockagent.research;
+
+import io.github.sjcud.stockagent.rag.retrieval.RetrievalHit;
+import java.util.*;
+
+/** 多角色研究响应，保留来源引用与六个角色的执行过程。 */
+public final class MultiResearchAnswer {
+    /** 采用的调度模式。 */
+    private final ResearchMode mode;
+    /** 组合经理汇总及原始报告。 */
+    private final PortfolioDecision decision;
+    /** 本次检索所得来源，供前端引用抽屉展示。 */
+    private final List<RetrievalHit> evidence;
+    /** 本次运行的角色输入输出，仅在响应中保存。 */
+    private final List<AgentTrace> traces;
+    /** 创建不可变响应，避免前端适配层修改共享列表。 */
+    public MultiResearchAnswer(ResearchMode mode, PortfolioDecision decision, List<RetrievalHit> evidence) {
+        this.mode = mode;
+        this.decision = decision;
+        this.evidence = Collections.unmodifiableList(new ArrayList<RetrievalHit>(evidence));
+        List<AgentTrace> collected = new ArrayList<AgentTrace>();
+        for (AnalystResult result : decision.getAnalystResults()) {
+            if (result.getTrace() != null) { collected.add(result.getTrace()); }
+        }
+        if (decision.getTrace() != null) { collected.add(decision.getTrace()); }
+        this.traces = Collections.unmodifiableList(collected);
+    }
+    /** 返回调度模式。 */
+    public ResearchMode getMode() { return mode; }
+    /** 返回研究决策。 */
+    public PortfolioDecision getDecision() { return decision; }
+    /** 返回带 Citation 的检索证据。 */
+    public List<RetrievalHit> getEvidence() { return evidence; }
+    /** 返回本次运行的执行轨迹。 */
+    public List<AgentTrace> getTraces() { return traces; }
+}
