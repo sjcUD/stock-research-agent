@@ -1,0 +1,16 @@
+{
+  "checks": 10,
+  "passed": [
+    "Desktop has no horizontal overflow",
+    "Analyst report drawer opens",
+    "Analyst report tabs switch and show missing data",
+    "Escape closes drawer",
+    "Discussion accordion expands",
+    "Follow-up chip fills composer",
+    "New research shows initial state",
+    "Evidence displays source panel",
+    "Mobile has no horizontal overflow",
+    "Mobile hides desktop sidebar"
+  ],
+  "scope": "Standalone local design prototype only; no backend, market data or model API integration."
+}

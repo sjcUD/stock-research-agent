@@ -1,0 +1,20 @@
+Generate ONE refined high fidelity desktop web application UI screenshot in Chinese, wide 16:10 aspect ratio, large crisp readable text. Product name 研股. This is a redesigned Java TradingAgents conversational stock research product, realistic polished software, NOT a diagram, NOT a poster, no device frame. Only TWO permanent columns: quiet narrow left sidebar 210px, spacious main research conversation occupying all remaining width. No permanent right panel. White #FFFFFF canvas, pale cool gray #F5F7FB navigation, navy #172A46 type, royal blue #2858D9 interactions, restrained teal completion checks, muted amber for missing data. Elegant PingFang-like Chinese sans serif. Generous but efficient spacing, precise thin separators, flat surfaces with minimal shadows. Avoid decorative gradients, generic dashboard tiles, giant metrics, dense market ticker wall, permanent third column, robot avatars, brokerage order buttons. Prioritize legibility and coherent Chinese.
+
+SIDEBAR: simple small abstract geometric logo and 研股 at top. Solid blue button + 新建研究. Compact nav items 研究对话 (active light blue), 研究报告, 决策评测. Hairline divider then 最近研究 with selected 宁德时代综合研究 and two subdued history rows 招商银行分红分析, 比亚迪风险评估. Small footer 设置 and user avatar/name. This sidebar is only app navigation/history, not an analyst team control panel.
+
+MAIN HEADER: title 宁德时代综合研究 and subline 300750.SZ · A股 · 数据截至 2026-10-30. Prominent quiet pill 演示数据. Right buttons 查看完整报告 and ellipsis. A thin top border separates header.
+CONVERSATION upper part: right aligned restrained pale blue user bubble 帮我分析宁德时代，综合基本面、技术、新闻和市场情绪，说明主要分歧与风险。 Below, assistant left aligned with small blue geometric mark and label 研股.
+EXECUTION SUMMARY: a compact single horizontal step strip reading 分析师研究 ✓  →  多空讨论 ✓  →  交易提案 ✓  →  风险评估 ✓  →  最终报告 ✓. Right small 展开过程. This is stage completion, not a horizontal navigation bar or giant node graph.
+
+ANSWER: navy medium large title 基本面与短期信号存在分歧. Below one restrained inline badge 研究评级：持有, next muted 不确定性：中等. One clear short Chinese paragraph 盈利与现金流值得继续跟踪，短期走势仍需确认；情绪样本不足，暂不据此调整判断。 Ensure it reads as an illustrative research conclusion, no investment guarantee.
+Below two balanced text columns WITHIN THE MAIN ANSWER, separated only by fine vertical rule, not separate application columns: heading 看多观点 in navy/teal and two concise bullets 盈利质量与现金流 / 储能业务进展; heading 看空观点 in navy/amber with bullets 竞争与价格压力 / 短期趋势未确认. These are opposing arguments, not different action buttons.
+
+Next big white research artifact surface in the conversation, titled 分析师报告, with horizontal tab labels 基本面 (active blue underline), 技术面, 新闻, 市场情绪. Small muted text 市场情绪：样本不足 on far right of this artifact header. Active 基本面 report contains a clear compact TABLE with three columns 观察项 / 分析要点 / 依据 and three rows:
+盈利质量 / 关注利润与经营现金流匹配 / 年报 [1]
+业务结构 / 区分动力与储能业务变化 / 业务披露 [2]
+资产负债 / 关注应收与资本开支 / 财务报表 [3]
+Use meaningful readable Chinese rather than filler. Beneath table small exact label 演示内容，不代表实际研究结论.
+Below artifact a thin collapsible row shield icon 风险评估  竞争加剧、需求变化、数据时效  chevron, and below compact inline links 查看依据 / 对比多空观点 / 导出报告. No trading/execution button.
+
+BOTTOM fixed generous composer separated from answer by comfortable space. Above it three small suggestion chips 为什么是持有？ / 展开技术分析 / 哪些证据会改变结论？. Textarea placeholder 继续追问，沿用当前股票与研究日期… with attachment icon bottom left, selector 标准研究 next to small selected-model settings icon, circular blue send arrow at bottom right. Under composer tiny footer 研究建议不自动执行交易.
+Overall finish: actual professional chat-first research workstation that makes multi-agent evidence and disagreement understandable, quiet elegant financial research design, no fake live quote or profits. Clear single screen, all essential content fits. Chinese text must be unusually crisp and accurate.

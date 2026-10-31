@@ -1,0 +1,27 @@
+{
+  "status": "accepted_by_user",
+  "date": "2026-10-31",
+  "purpose": "First-version visual and interaction baseline for a regular learning project",
+  "prototype": "deliverables/ui-v6/index.html",
+  "screenshot": "deliverables/ui-v6/research-workspace-v6.png",
+  "palette": {
+    "background": "#FFFFFF",
+    "sidebar": "#F2FAFF",
+    "accent": "#229FDF",
+    "send": "#168FCE",
+    "secondary": "#35C3B1",
+    "text": "#34495B"
+  },
+  "interaction": [
+    "two permanent columns",
+    "chat-first research results",
+    "collapsed research process",
+    "on-demand analyst reports and evidence",
+    "follow-up preserves stock and research date"
+  ],
+  "notAcceptedAsRealData": "All prototype market values, chart points, reports and source labels remain demonstration content",
+  "snapshotSha256": {
+    "index.html": "2abb9d68bcd6473de6c80f46440f1522380b6277ca8f5d8cafd9341b8be43dcb",
+    "research-workspace-v6.png": "520dc6c454a984bb233b5a132701a14a060a80462b01c9f50f53d5cb2071b21d"
+  }
+}

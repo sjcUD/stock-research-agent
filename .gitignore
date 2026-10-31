@@ -1,0 +1,20 @@
+/reference-repos/
+
+# Java build output
+**/target/
+
+# Frontend dependencies/build output
+**/node_modules/
+**/dist/
+
+# Local credentials and runtime data
+.env
+.env.*
+!.env.example
+**/data/
+**/logs/
+
+# OS/editor files
+.DS_Store
+.idea/
+.vscode/
