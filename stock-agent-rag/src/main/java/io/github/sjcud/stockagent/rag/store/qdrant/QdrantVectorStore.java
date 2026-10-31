@@ -37,7 +37,7 @@ public class QdrantVectorStore implements VectorStore {
             metadata.put("documentRevision", chunk.getDocumentRevision());
             metadata.put("page", chunk.getPage());
             metadata.put("offset", chunk.getOffset());
-            documents.add(new Document(chunk.getText(), metadata));
+            documents.add(new Document(chunk.getChunkId(), chunk.getText(), metadata));
         }
         delegate.add(documents);
     }

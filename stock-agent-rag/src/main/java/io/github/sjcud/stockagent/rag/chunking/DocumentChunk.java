@@ -26,4 +26,14 @@ public final class DocumentChunk {
     public int getPage() { return page; }
     public int getOffset() { return offset; }
     public String getText() { return text; }
+
+    /**
+     * 返回由来源和偏移组成的稳定片段标识。
+     *
+     * <p>稳定 ID 用于幂等写入、引用回链和后续删除旧版本，不能使用
+     * 每次进程启动都会变化的随机 UUID。</p>
+     */
+    public String getChunkId() {
+        return documentId + ":" + documentRevision + ":" + page + ":" + offset;
+    }
 }

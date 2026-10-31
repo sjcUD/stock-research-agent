@@ -14,13 +14,14 @@
 - [x] 增加 Qdrant VectorStore 适配器
 - [x] 增加 Harness 的预算、失败分类和上下文压缩基础实现
 - [x] 增加 MySQL 初始迁移脚本
-- [x] 建立 JUnit 测试，当前 13 个测试通过
+- [x] 建立 JUnit 测试，当前 16 个测试通过
 - [x] 清理不应提交的本地研究资料目录
 - [x] 重写 README 并推送到 GitHub
 
 ## 下一步
 
-- [ ] 完成 RAG 文档解析、切片、Embedding 和 Qdrant 写入流程
+- [x] 完成纯文本解析、切片和向量入库编排
+- [ ] 接入真实 Embedding 模型并验证 Qdrant 写入
 - [ ] 接通 Qdrant 检索、引用和来源回传
 - [ ] 增加 MySQL Repository 与研究运行记录
 - [ ] 接入真实 ChatModel 和 Embedding 配置
