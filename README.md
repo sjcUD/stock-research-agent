@@ -136,6 +136,10 @@ QDRANT_INTEGRATION=true mvn -pl stock-agent-rag -am \
   -Dtest=QdrantLiveIntegrationTest -Dsurefire.failIfNoSpecifiedTests=false test
 ```
 
+真实 Embedding 使用 OpenAI 兼容接口，配置方式见 [.env.example](.env.example)。配置
+`STOCK_AGENT_EMBEDDING_API_KEY` 后，Web 模块会创建 `OpenAiEmbeddingModel`；
+`STOCK_AGENT_EMBEDDING_BASE_URL` 可切换到其他兼容服务。
+
 ## 代码约定
 
 - 类、字段、公开方法和关键算法必须有清晰的中文注释。
