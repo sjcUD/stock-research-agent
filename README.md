@@ -6,23 +6,24 @@
 
 - 单分析师研究：问题 → RAG 检索 → 基本面回答 → 引用来源。
 - 多分析师研究：基本面、技术面、新闻、情绪、风险五个独立角色 → 组合经理汇总；支持串行和并行对照。
+- 市场数据：腾讯未复权日线、东方财富最近新闻和公告列表，服务端计算 SMA、RSI、MACD，保留来源、时间、响应指纹与失败状态。
 - RAG：文档解析、切片、真实 Embedding、Qdrant 写入与检索、Citation 回传。
 - 解析器支持 PDF、Word、Excel、HTML、纯文本和 Markdown；目前以文本提取为主，OCR、精确页码与表格结构尚未完善。
 - Harness：调用次数预算、估算 Token 预算、截止时间检查、有限重试基础能力；多角色共享请求预算，超时和失败触发其他任务取消。
 - MySQL：运行记录 JDBC Repository 和迁移脚本；Web 创建运行接口当前默认使用内存仓储，多角色轨迹只随响应回传。
 - Spring AI Alibaba `ReactAgent` 最小工厂及工具循环学习探针。
 
-当前多分析师是提示词角色，调度采用 Java 执行器，尚未通过 Alibaba Graph 构建完整协作图。技术指标、实时新闻和社交情绪数据工具将在 P9 接入。只有一个收盘价时，角色应说明无法计算 MACD、RSI 等指标。它们不会自动获得不存在的数据，也不会执行真实交易。
+当前多分析师是提示词角色，调度采用 Java 执行器，尚未通过 Alibaba Graph 构建完整协作图。P9 已接入日线、技术指标及最近资讯；完整财报、实时分时和社交情绪样本尚未接入。只有一个收盘价时，角色应说明无法计算 MACD、RSI 等指标。它们不会自动获得不存在的数据，也不会执行真实交易。
 
-已接通过真实 ChatModel、Embedding、Qdrant 和 MySQL 的基础联调。聊天前端、会话持久化、真实行情和接入聊天链路的上下文压缩尚未完成。完整进度与后续工作见 [TODO.md](TODO.md)，模型兼容性经验见 [TROUBLESHOOTING.md](TROUBLESHOOTING.md)。
+已接通过真实 ChatModel、Embedding、Qdrant 和 MySQL 的基础联调。真实日线已接入；聊天前端、会话持久化和接入聊天链路的上下文压缩尚未完成。完整进度与后续工作见 [TODO.md](TODO.md)，模型兼容性经验见 [TROUBLESHOOTING.md](TROUBLESHOOTING.md)。
 
 ## 模块
 
 | 模块 | 职责 |
 | --- | --- |
 | stock-agent-contracts | 跨模块公共契约 |
-| stock-agent-data-contracts | 数据模式等领域契约 |
-| stock-agent-data-provider | SAMPLE 行情与数据提供器边界 |
+| stock-agent-data-contracts | 数据模式、提供器接口、日线、资讯与可追溯数据分组 |
+| stock-agent-data-provider | SAMPLE/LIVE 策略、HTTP/限流、日线资讯适配及指标计算 |
 | stock-agent-llm | Chat、Embedding、Rerank 网关和模型注册 |
 | stock-agent-rag | 解析、切片、检索、引用和 Qdrant 适配 |
 | stock-agent-research-agent | 工具循环、单角色与多角色研究 |
@@ -48,6 +49,8 @@ mvn -pl stock-agent-web spring-boot:run
 应用默认地址：`http://localhost:8080`。当前提供 API，尚无完整聊天页面。Qdrant 默认使用 gRPC 6334；如果本机 MySQL 端口为 3307，JDBC URL 需相应调整。数据库表结构见 `stock-agent-runtime/src/main/resources/db/migration/V1__baseline.sql`。
 
 ```text
+GET  /api/market/data            服务端行情、指标、新闻与公告
+POST /api/research/chat/market   无需用户报价的市场研究
 POST /api/research/chat          单基本面分析师
 POST /api/research/chat/multi    五角色分析 + 组合经理
 POST /api/research/runs          创建研究运行记录（默认内存仓储）
@@ -101,4 +104,58 @@ QDRANT_INTEGRATION=true mvn -pl stock-agent-rag -am \
 
 模型 Base URL 和路径兼容配置参见 [TROUBLESHOOTING.md](TROUBLESHOOTING.md)。DashScope Embedding 保留完整 `/compatible-mode/v1` Base URL，并显式设置 `embeddingsPath("/embeddings")`。
 
-下一阶段接入真实 A 股行情、新闻等数据；同时保留 P6/P7 中尚未完成的会话持久化、HTTP 超时、阶段预算和上下文压缩任务。前端沿用已确定的浅色聊天交互设计。
+下一阶段为 P10 聊天前端；同时保留 P6/P7 中尚未完成的会话持久化、模型 HTTP 超时、阶段预算和上下文压缩任务。前端沿用已确定的浅色聊天交互设计。
+
+## P9 市场数据与研究
+
+默认 `STOCK_AGENT_DATA_MODE=SAMPLE`，只提供 `600519 / 2026-10-30` 的固定合成样例。样例日线包含合成日历天，不是交易日历或实际历史成交。其他标的和日期明确拒绝，不套用同一个报价。
+
+在线模式独立于模型模式：
+
+```bash
+set -a
+. ./.env
+set +a
+export STOCK_AGENT_DATA_MODE=LIVE
+export STOCK_AGENT_QDRANT_ENABLED=true
+# 仅对支持该参数的 DeepSeek 服务使用；其他服务按自己的能力配置
+export STOCK_AGENT_CHAT_THINKING_MODE=disabled
+mvn -pl stock-agent-web spring-boot:run
+```
+
+```bash
+curl 'http://localhost:8080/api/market/data?symbol=600519&asOf=2026-10-30'
+curl http://localhost:8080/api/research/chat/market \
+  -H 'Content-Type: application/json' \
+  -d '{"question":"请说明指标和资讯支持的判断及缺失信息，每个角色100字以内", "symbol":"600519", "asOf":"2026-10-30", "mode":"PARALLEL"}'
+```
+
+`asOf` 按上海时区解释。在线首版支持沪深 A 股，接受 `600519`、`sh600519`、`600519.SH` 等匹配身份；不接指数、北交所或美股。未来日期和当日16点前的日终请求拒绝；返回的实际行情日可能早于请求日。最新报价超过14天则拒绝并提示核查停牌或时效，不自动回退样例。
+
+纯取数 API 不需要模型或 Qdrant。市场研究入口目前复用多角色服务装配，仍需配置 ChatModel 和启用 Qdrant，但该入口不检索当前没有披露时点标签的通用 RAG 文档，避免把样例或未来文档混入真实研究。原 `/api/research/chat` 与 `/api/research/chat/multi` 保留 RAG 学习链路。
+
+市场研究响应包含 `marketData` 与 `research`。前者携带实际日线、计算指标、新闻/公告原文链接与分组来源；后者包含五角色报告、经理汇总和执行轨迹。分组状态区分 `AVAILABLE`、`EMPTY`、`UNAVAILABLE`：成功空结果不等于全市场没有事件，接口失败更不能当作没有事件。
+
+数据边界：
+
+- 日线采用腾讯最近180个日历天窗口的**未复权**人民币 OHLC，不读取响应附带的实时快照，也暂不暴露尚未统一单位的成交量。
+- 新闻为东方财富关键词查询最近10条，公告为最近20条列表；再按研究日及最近30天过滤。它们不是完整历史资料库，历史研究可能得到空结果。公告按 `notice_date` 的日期保守过滤，不将较早的 `display_time` 当作精确披露时点；不自动下载公告全文。
+- 来源响应的 SHA-256 标识本次抓取版本，`fetchedAt` 表示抓取时刻，均不能证明完整历史可得性或替代供应商发布版本。
+- SMA5/20 使用窗口收盘价均值；RSI14 使用 Wilder 平滑，平盘约定50；MACD(12,26,9) 用窗口首日收盘价初始化 EMA，柱值为 `2*(DIF-DEA)`。未复权除权跳变和窗口初值都可能导致指标与行情软件不同。
+- 核心行情失败会终止 LIVE 请求；新闻或公告失败以 `UNAVAILABLE` 显式降级。价格须为正且满足高低关系；金额文本限制为12位整数、6位小数，拒绝异常科学计数法膨胀。
+- 默认连接3秒、读取空闲5秒、总网络截止8秒、响应上限1MiB；所有上游共享每分钟60次的发送间隔，排队超过1.5秒拒绝。总截止及线程中断会主动取消 HTTP 请求，每次请求释放连接和监控线程。
+- 进入模型的新闻最多3条、公告最多5条，摘要截短明确标记；完整结构化结果仍返回给客户端。这是上下文选择，不是已经完成 P7 的历史上下文压缩。组合经理去重同一份共享证据，避免五角色重复放大输入。
+
+网页数据适配可能随供应商协议变化。参考的是 [AKShare 腾讯日线接口说明](https://akshare.akfamily.xyz/data/stock/stock_quote.html)及[个股新闻说明](https://akshare.akfamily.xyz/data/stock/stock_research.html)，Java 通过 `HttpTextClient`、`StockDataProvider` 隔离传输和来源，不需要 Python 侧车。替换为其他数据源时，研究服务无需依赖新供应商 SDK。
+
+显式真实数据测试与完整市场研究测试：
+
+```bash
+MARKET_DATA_INTEGRATION=true MARKET_DATA_AS_OF=2026-10-30 mvn -pl stock-agent-data-provider -am \
+  -Dtest=LiveMarketDataIntegrationTest -Dsurefire.failIfNoSpecifiedTests=false test
+# 先加载模型 .env，并设置 LIVE、Qdrant 和供应商支持的思考模式配置
+MARKET_RESEARCH_INTEGRATION=true MARKET_DATA_AS_OF=2026-10-30 mvn -pl stock-agent-web -am \
+  -Dtest=MarketResearchLiveIntegrationTest -Dsurefire.failIfNoSpecifiedTests=false test
+```
+
+P9 对应的 Agent 学习点是：工具/数据提供器边界、确定性计算与模型推断分工、asOf 防未来信息、可追溯证据、部分失败与恢复策略、限流/截止/取消，以及给多角色选择有限上下文。取数由服务端编排完成，当前不宣称分析师已自主选择所有市场工具或具备完整历史回测能力。

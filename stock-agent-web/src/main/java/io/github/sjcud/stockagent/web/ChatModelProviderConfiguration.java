@@ -11,6 +11,8 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.retry.support.RetryTemplate;
+import org.springframework.http.client.JdkClientHttpRequestFactory;
+import org.springframework.web.client.RestClient;
 
 /** OpenAI 兼容 ChatModel 配置；配置 Chat API Key 后启用真实聊天模型。 */
 @Configuration
@@ -24,7 +26,10 @@ public class ChatModelProviderConfiguration {
             @Value("${stock.agent.chat.model:deepseek-chat}") String model,
             @Value("${stock.agent.chat.max-tokens:2048}") Integer maxTokens,
             @Value("${stock.agent.chat.thinking-mode:}") String thinkingMode) {
-        OpenAiApi api = OpenAiApi.builder().baseUrl(baseUrl).apiKey(apiKey).build();
+        // 显式固定模型传输，避免新增数据模块的 Apache 依赖改变 RestClient 的自动选择。
+        // JDK 运行基线为21，源码仍使用 Java8 风格；不改变 OpenAI 兼容协议适配。
+        OpenAiApi api = OpenAiApi.builder().baseUrl(baseUrl).apiKey(apiKey)
+                .restClientBuilder(RestClient.builder().requestFactory(new JdkClientHttpRequestFactory())).build();
         OpenAiChatOptions options = new OpenAiChatOptions();
         options.setModel(model);
         options.setTemperature(0.0D);

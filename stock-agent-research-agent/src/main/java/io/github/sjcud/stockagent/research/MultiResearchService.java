@@ -1,6 +1,8 @@
 package io.github.sjcud.stockagent.research;
 
 import io.github.sjcud.stockagent.data.MarketSnapshot;
+import io.github.sjcud.stockagent.data.StockResearchData;
+import java.util.Collections;
 import io.github.sjcud.stockagent.rag.retrieval.*;
 import io.github.sjcud.stockagent.rag.store.*;
 import io.github.sjcud.stockagent.runtime.harness.*;
@@ -27,13 +29,24 @@ public class MultiResearchService {
     }
     /** 执行一次完整研究；任一角色失败即终止，不汇总不完整报告。 */
     public MultiResearchAnswer ask(String question, MarketSnapshot snapshot, ResearchMode mode) throws Exception {
+        return execute(question, snapshot, mode, "", true);
+    }
+    /** 托管市场研究使用可追溯结构化事实，暂不混入没有历史时点元数据的通用 RAG 库。 */
+    public MultiResearchAnswer ask(String question, StockResearchData data, ResearchMode mode) throws Exception {
+        if (data == null) { throw new IllegalArgumentException("市场数据不能为空"); }
+        return execute(question, data.getSnapshot(), mode, new MarketContextFormatter().format(data), false);
+    }
+    /** 共用角色、预算和汇总流程；RAG 是否启用由入口策略决定。 */
+    private MultiResearchAnswer execute(String question, MarketSnapshot snapshot, ResearchMode mode,
+                                        String marketEvidence, boolean includeRag) throws Exception {
         if (question == null || question.trim().isEmpty() || snapshot == null || mode == null) {
             throw new IllegalArgumentException("问题、行情和模式不能为空");
         }
         BudgetLedger ledger = new BudgetLedger(modelCalls, System.currentTimeMillis() + 120000L, 60000);
-        List<RetrievalHit> hits = new TimedVectorStore(store).search(new RetrievalQuery(question, 5),
-                Math.min(10000L, ledger.remainingMillis()), () -> Thread.currentThread().isInterrupted());
-        StringBuilder evidence = new StringBuilder();
+        List<RetrievalHit> hits = includeRag ? new TimedVectorStore(store).search(new RetrievalQuery(question, 5),
+                Math.min(10000L, ledger.remainingMillis()), () -> Thread.currentThread().isInterrupted())
+                : Collections.<RetrievalHit>emptyList();
+        StringBuilder evidence = new StringBuilder(marketEvidence);
         for (RetrievalHit hit : hits) {
             evidence.append("[片段=").append(hit.getChunkId()).append("] ").append(hit.getText()).append('\n');
         }
@@ -42,11 +55,7 @@ public class MultiResearchService {
         ExecutorService pool = Executors.newSingleThreadExecutor();
         Future<PortfolioDecision> future = null;
         try {
-            StringBuilder managerInput = new StringBuilder(question);
-            for (AnalystResult result : results) {
-                managerInput.append(result.getConclusion()).append(result.getEvidence());
-            }
-            final int tokens = MultiAnalystOrchestrator.estimateTokens(managerInput.toString(), "");
+            final int tokens = manager.estimateTokens(question, results);
             future = pool.submit(() -> new HarnessCallExecutor(new FailureClassifier()).execute(
                     () -> manager.decide(question, results), ledger, 1, 0L,
                     () -> Thread.currentThread().isInterrupted(), tokens));

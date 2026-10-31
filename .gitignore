@@ -11,7 +11,8 @@
 .env
 .env.*
 !.env.example
-**/data/
+/data/
+/*/data/
 **/logs/
 
 # OS/editor files

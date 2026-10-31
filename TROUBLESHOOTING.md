@@ -84,3 +84,15 @@ MULTI_RESEARCH_INTEGRATION=true mvn -pl stock-agent-web -am \
 ```
 
 该测试会调用真实 Embedding、Qdrant、五个分析师和组合经理，需要足够的请求与 Token 额度。数据快照明确标为 SAMPLE；响应不是实时行情结果。
+
+## Java 包名被运行时目录忽略规则误伤（2026-11-01）
+
+原规则 `**/data/` 也会忽略 `src/main/java/.../stockagent/data` 及对应测试目录，导致本地 Maven 能运行而源码没有进入 Git。P9 将规则收窄为 `/data/` 和 `/*/data/`，只忽略根目录与模块根目录的运行时数据。数据契约和提供器必须随源码提交；验证时同时检查 `git status`、`git check-ignore` 与干净构建，不能仅凭本地测试通过认定仓库可复现。
+
+## P9 HTTP 总超时与客户端自动选择（2026-11-01）
+
+- 只设置连接和 socket 空闲读取超时，不能覆盖缓慢持续发送响应头的上游。独立审查通过本地逐字节响应头复现：200ms 目标时限被拖长到2秒以上。P9 改用可取消的 Apache HttpClient 适配，独立监控总截止和调用线程中断，到期 `HttpGet.cancel()`，并关闭每次请求的连接与监控线程。慢响应头、执行中取消、响应过大和非200均有回归测试。
+- 新增 Apache 依赖后，Spring 6.2.11 `DefaultRestClientBuilder.initRequestFactory()` 会优先选择 Apache，模型链路因此与之前不同。真实串/并行市场研究均观察到模型 JSON 提前结束；显式将 ChatModel 的 RestClient 固定为 `JdkClientHttpRequestFactory` 后，同一真实市场研究集成测试通过。这里只记录本次 A/B 观察，不归结为 Spring AI 协议适配失效或 Apache 对所有服务都不可用；供应商网关、HTTP版本等更深层原因未作定论。
+- 模型仍通过 Spring AI `OpenAiApi` 适配，不新增手写模型 HTTP 网关。市场数据传输与模型传输各自明确选择，避免 classpath 新依赖无意改变已有行为。
+- Java 编译未保留方法参数名时，`@RequestParam` 必须显式写 `symbol` 和 `asOf`；直接调用控制器的单元测试无法发现该绑定错误，因此增加随机本地端口的真实 MVC HTTP 回归。
+- 腾讯未复权日线 `param` 的最后一个复权参数为空，末尾逗号仍必须保留；东方财富新闻 JSONP 使用固定回调，禁止执行脚本，也不宽松截取任意括号。资讯时间语义保留原始精度，公告 `notice_date` 不用较早的 `display_time` 替换。
