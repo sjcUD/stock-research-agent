@@ -4,6 +4,10 @@ import io.github.sjcud.stockagent.data.MarketSnapshot;
 import io.github.sjcud.stockagent.rag.retrieval.RetrievalHit;
 import io.github.sjcud.stockagent.rag.retrieval.RetrievalQuery;
 import io.github.sjcud.stockagent.rag.store.VectorStore;
+import io.github.sjcud.stockagent.rag.store.TimedVectorStore;
+import io.github.sjcud.stockagent.runtime.harness.BudgetLedger;
+import io.github.sjcud.stockagent.runtime.harness.HarnessCallExecutor;
+import java.util.function.BooleanSupplier;
 import io.github.sjcud.stockagent.analyst.FundamentalsAnalyst;
 import java.util.List;
 
@@ -16,6 +20,7 @@ import java.util.List;
 public class ResearchChatService {
     private final VectorStore vectorStore;
     private final FundamentalsAnalyst analyst;
+    private final HarnessCallExecutor executor;
 
     public ResearchChatService(VectorStore vectorStore, FundamentalsAnalyst analyst) {
         if (vectorStore == null || analyst == null) {
@@ -23,16 +28,35 @@ public class ResearchChatService {
         }
         this.vectorStore = vectorStore;
         this.analyst = analyst;
+        this.executor = new HarnessCallExecutor(new io.github.sjcud.stockagent.runtime.harness.FailureClassifier());
     }
 
     /** 检索问题相关证据后生成研究回答。 */
     public ResearchChatAnswer ask(String question, MarketSnapshot snapshot) {
-        List<RetrievalHit> hits = vectorStore.search(new RetrievalQuery(question, 5));
+        return ask(question, snapshot, () -> false);
+    }
+
+    /** 带取消信号的研究请求；每个请求拥有独立预算账本。 */
+    public ResearchChatAnswer ask(String question, MarketSnapshot snapshot, BooleanSupplier cancelled) {
+        BudgetLedger ledger = new BudgetLedger(3, System.currentTimeMillis() + 30000L, 6000);
+        List<RetrievalHit> hits;
+        try {
+            hits = new TimedVectorStore(vectorStore).search(
+                    new RetrievalQuery(question, 5), ledger.remainingMillis(), cancelled);
+        } catch (Exception exception) {
+            throw new IllegalStateException("RAG 检索失败", exception);
+        }
         StringBuilder evidence = new StringBuilder();
         for (RetrievalHit hit : hits) {
             evidence.append("[片段=").append(hit.getChunkId()).append("] ")
                     .append(hit.getText()).append("；");
         }
-        return new ResearchChatAnswer(analyst.analyze(snapshot, evidence.toString()), hits);
+        try {
+            String answer = executor.execute(() -> analyst.analyze(snapshot, evidence.toString()),
+                    ledger, 2, 100L, cancelled, 1500);
+            return new ResearchChatAnswer(answer, hits);
+        } catch (Exception exception) {
+            throw new IllegalStateException("研究模型调用失败", exception);
+        }
     }
 }

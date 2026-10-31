@@ -39,4 +39,13 @@ public class HarnessCallExecutorTest {
         assertThrows(IllegalStateException.class, () -> new HarnessCallExecutor(new FailureClassifier())
                 .execute(() -> "never", ledger, 1, 0L, () -> false));
     }
+
+    @Test
+    public void shouldReserveTokenBudget() {
+        BudgetLedger ledger = new BudgetLedger(1, System.currentTimeMillis() + 5000L, 10);
+
+        org.junit.jupiter.api.Assertions.assertTrue(ledger.reserveTokens(6));
+        org.junit.jupiter.api.Assertions.assertFalse(ledger.reserveTokens(5));
+        assertEquals(4, ledger.getRemainingTokens());
+    }
 }

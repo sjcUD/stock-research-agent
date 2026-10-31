@@ -10,13 +10,19 @@ import java.util.concurrent.atomic.AtomicInteger;
  */
 public class BudgetLedger {
     private final AtomicInteger remainingModelCalls;
+    private final AtomicInteger remainingTokens;
     private final long deadlineMillis;
 
     public BudgetLedger(int modelCalls, long deadlineMillis) {
-        if (modelCalls < 0 || deadlineMillis <= 0) {
+        this(modelCalls, deadlineMillis, Integer.MAX_VALUE);
+    }
+
+    public BudgetLedger(int modelCalls, long deadlineMillis, int tokenBudget) {
+        if (modelCalls < 0 || deadlineMillis <= 0 || tokenBudget < 0) {
             throw new IllegalArgumentException("预算必须为非负且 deadline 必须大于0");
         }
         this.remainingModelCalls = new AtomicInteger(modelCalls);
+        this.remainingTokens = new AtomicInteger(tokenBudget);
         this.deadlineMillis = deadlineMillis;
     }
 
@@ -46,5 +52,26 @@ public class BudgetLedger {
     /** 返回剩余毫秒数；已过期时返回0。 */
     public long remainingMillis() {
         return Math.max(0L, deadlineMillis - System.currentTimeMillis());
+    }
+
+    /** 原子预留估算 Token 额度。 */
+    public boolean reserveTokens(int tokens) {
+        if (tokens < 0) {
+            throw new IllegalArgumentException("tokens 必须为非负");
+        }
+        while (true) {
+            int current = remainingTokens.get();
+            if (current < tokens) {
+                return false;
+            }
+            if (remainingTokens.compareAndSet(current, current - tokens)) {
+                return true;
+            }
+        }
+    }
+
+    /** 返回剩余 Token 预算。 */
+    public int getRemainingTokens() {
+        return remainingTokens.get();
     }
 }

@@ -52,6 +52,15 @@ public class HarnessCallExecutor {
         throw lastRetryable == null ? new IllegalStateException("调用未执行") : lastRetryable;
     }
 
+    /** 执行一次同时预留 Token 预算的模型调用。 */
+    public <T> T execute(Callable<T> action, BudgetLedger ledger, int maxAttempts,
+                         long backoffMillis, BooleanSupplier cancelled, int estimatedTokens) throws Exception {
+        if (!ledger.reserveTokens(estimatedTokens)) {
+            throw new IllegalStateException("Token 预算已耗尽");
+        }
+        return execute(action, ledger, maxAttempts, backoffMillis, cancelled);
+    }
+
     private void checkState(BudgetLedger ledger, BooleanSupplier cancelled) {
         if (cancelled.getAsBoolean()) {
             throw new IllegalStateException("研究任务已取消");
