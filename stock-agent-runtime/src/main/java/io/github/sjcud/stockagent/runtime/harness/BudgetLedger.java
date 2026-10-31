@@ -37,4 +37,14 @@ public class BudgetLedger {
     public long getDeadlineMillis() {
         return deadlineMillis;
     }
+
+    /** 判断当前 run 是否已经超过绝对截止时间。 */
+    public boolean isExpired() {
+        return System.currentTimeMillis() >= deadlineMillis;
+    }
+
+    /** 返回剩余毫秒数；已过期时返回0。 */
+    public long remainingMillis() {
+        return Math.max(0L, deadlineMillis - System.currentTimeMillis());
+    }
 }
