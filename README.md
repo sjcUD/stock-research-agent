@@ -157,6 +157,14 @@ CHAT_INTEGRATION=true mvn -pl stock-agent-web -am \
   -Dsurefire.failIfNoSpecifiedTests=false test
 ```
 
+启动完整 Web 应用：
+
+```bash
+set -a; . ./.env; set +a
+export STOCK_AGENT_QDRANT_ENABLED=true
+mvn -pl stock-agent-web spring-boot:run
+```
+
 运行记录的 MySQL JDBC 实现位于 `stock-agent-runtime`，生产装配时将 `ResearchRunRepository` 替换为 `JdbcResearchRunRepository`，并执行 `src/main/resources/db/migration/V1__baseline.sql`。
 
 真实 Qdrant 联调需要本地 Qdrant 的 HTTP 6333 和 gRPC 6334 端口，并使用：

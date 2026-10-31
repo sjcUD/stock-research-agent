@@ -16,13 +16,12 @@ import org.springframework.retry.support.RetryTemplate;
 
 /** OpenAI 兼容 ChatModel 配置；配置 Chat API Key 后启用真实聊天模型。 */
 @Configuration
-@ConditionalOnProperty(name = "stock.agent.chat.api-key")
 public class ChatModelProviderConfiguration {
 
     /** 创建真实 ChatModel。 */
     @Bean
     public ChatModel chatModel(
-            @Value("${stock.agent.chat.api-key}") String apiKey,
+            @Value("${stock.agent.chat.api-key:}") String apiKey,
             @Value("${stock.agent.chat.base-url:https://api.deepseek.com}") String baseUrl,
             @Value("${stock.agent.chat.model:deepseek-chat}") String model,
             @Value("${stock.agent.chat.max-tokens:2048}") Integer maxTokens) {

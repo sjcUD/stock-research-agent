@@ -5,7 +5,9 @@ import io.github.sjcud.stockagent.rag.retrieval.RetrievalHit;
 import io.github.sjcud.stockagent.research.ResearchChatAnswer;
 import io.github.sjcud.stockagent.research.ResearchChatService;
 import java.util.List;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
+import org.springframework.http.HttpStatus;
+import org.springframework.web.server.ResponseStatusException;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -14,17 +16,21 @@ import org.springframework.web.bind.annotation.RestController;
 /** 聊天式研究 API，返回回答和可展开的检索证据。 */
 @RestController
 @RequestMapping("/api/research/chat")
-@ConditionalOnBean(ResearchChatService.class)
 public class ResearchChatController {
-    private final ResearchChatService service;
+    private final ObjectProvider<ResearchChatService> serviceProvider;
 
-    public ResearchChatController(ResearchChatService service) {
-        this.service = service;
+    public ResearchChatController(ObjectProvider<ResearchChatService> serviceProvider) {
+        this.serviceProvider = serviceProvider;
     }
 
     /** 接收问题和行情快照，返回带证据的研究回答。 */
     @PostMapping
     public ChatResponse ask(@RequestBody ChatRequest request) {
+        ResearchChatService service = serviceProvider.getIfAvailable();
+        if (service == null) {
+            throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE,
+                    "ResearchChatService 未就绪，请检查 ChatModel 和 Qdrant 配置");
+        }
         ResearchChatAnswer answer = service.ask(request.getQuestion(),
                 new MarketSnapshot(request.getSymbol(), request.getClose(), request.getAsOf(), request.getSource()));
         return new ChatResponse(answer.getAnswer(), answer.getEvidence());

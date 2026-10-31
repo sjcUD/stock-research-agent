@@ -55,7 +55,7 @@
 - [ ] 装配 `ResearchChatService` 到 Web 容器
   - [x] 将真实 ChatModel 注入 `FundamentalsAnalyst`
   - [x] 启用 `/api/research/chat` 的条件装配
-  - [ ] 验证“问题 → RAG → 模型回答 → Citation”
+  - [x] 验证“问题 → RAG → 模型回答 → Citation”
 - [ ] 增加聊天会话和消息持久化
   - [ ] conversation 表 Repository
   - [ ] 消息列表和运行状态查询
