@@ -26,8 +26,8 @@
 - [x] 验证真实 Qdrant 写入、检索和引用回传
 - [x] 增加 MySQL JDBC Repository 与研究运行记录
 - [x] 增加最小 Web API 和本地内存仓储启动入口
+- [x] 完成 MySQL 容器联调并验证 JDBC 账号配置
 - [ ] 配置真实外部 Embedding provider 并进行 API 联调
-- [ ] 完成 MySQL 容器联调并验证 JDBC 账号配置
 - [ ] 完善预算、超时、取消和有限重试链路
 - [ ] 增加技术面、新闻、情绪分析师
 - [ ] 实现分析师协作与组合决策流程
