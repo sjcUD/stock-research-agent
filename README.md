@@ -129,6 +129,15 @@ curl -X POST http://localhost:8080/api/research/runs \
   -d '{"conversationId":1,"requestJson":"{\"symbol\":\"600519\"}"}'
 ```
 
+RAG 接口在启用 Qdrant 后提供：
+
+```text
+POST /api/rag/documents   # 文档解析、切片、Embedding、Qdrant 入库
+GET  /api/rag/search?q=收入增长&topK=5
+```
+
+检索响应中的 `citation` 包含文档 ID、版本、页码和原文偏移，可直接用于前端来源展示。
+
 运行记录的 MySQL JDBC 实现位于 `stock-agent-runtime`，生产装配时将 `ResearchRunRepository` 替换为 `JdbcResearchRunRepository`，并执行 `src/main/resources/db/migration/V1__baseline.sql`。
 
 真实 Qdrant 联调需要本地 Qdrant 的 HTTP 6333 和 gRPC 6334 端口，并使用：
