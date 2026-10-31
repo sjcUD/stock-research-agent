@@ -111,6 +111,31 @@ mvn test
 
 文档解析目前支持 PDF、Word、Excel、HTML、纯文本和 Markdown。解析器只负责提取文本，页码、表格结构和 OCR 等增强能力会在后续专用适配器中补充。
 
+## Web API
+
+Web 模块提供一个最小研究运行接口，默认使用内存仓储，便于本地启动：
+
+```bash
+mvn -pl stock-agent-web spring-boot:run
+```
+
+创建研究运行：
+
+```bash
+curl -X POST http://localhost:8080/api/research/runs \
+  -H 'Content-Type: application/json' \
+  -d '{"conversationId":1,"requestJson":"{\"symbol\":\"600519\"}"}'
+```
+
+运行记录的 MySQL JDBC 实现位于 `stock-agent-runtime`，生产装配时将 `ResearchRunRepository` 替换为 `JdbcResearchRunRepository`，并执行 `src/main/resources/db/migration/V1__baseline.sql`。
+
+真实 Qdrant 联调需要本地 Qdrant 的 HTTP 6333 和 gRPC 6334 端口，并使用：
+
+```bash
+QDRANT_INTEGRATION=true mvn -pl stock-agent-rag -am \
+  -Dtest=QdrantLiveIntegrationTest -Dsurefire.failIfNoSpecifiedTests=false test
+```
+
 ## 代码约定
 
 - 类、字段、公开方法和关键算法必须有清晰的中文注释。

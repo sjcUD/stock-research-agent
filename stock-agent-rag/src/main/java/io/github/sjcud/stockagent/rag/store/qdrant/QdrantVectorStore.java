@@ -3,9 +3,11 @@ package io.github.sjcud.stockagent.rag.store.qdrant;
 import io.github.sjcud.stockagent.rag.chunking.DocumentChunk;
 import io.github.sjcud.stockagent.rag.retrieval.RetrievalHit;
 import io.github.sjcud.stockagent.rag.retrieval.RetrievalQuery;
+import io.github.sjcud.stockagent.rag.retrieval.Citation;
 import io.github.sjcud.stockagent.rag.store.VectorStore;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.UUID;
 import org.springframework.ai.document.Document;
 import org.springframework.ai.vectorstore.SearchRequest;
 
@@ -37,7 +39,10 @@ public class QdrantVectorStore implements VectorStore {
             metadata.put("documentRevision", chunk.getDocumentRevision());
             metadata.put("page", chunk.getPage());
             metadata.put("offset", chunk.getOffset());
-            documents.add(new Document(chunk.getChunkId(), chunk.getText(), metadata));
+            metadata.put("chunkId", chunk.getChunkId());
+            String qdrantId = UUID.nameUUIDFromBytes(
+                    chunk.getChunkId().getBytes(java.nio.charset.StandardCharsets.UTF_8)).toString();
+            documents.add(new Document(qdrantId, chunk.getText(), metadata));
         }
         delegate.add(documents);
     }
@@ -50,8 +55,24 @@ public class QdrantVectorStore implements VectorStore {
         List<RetrievalHit> hits = new ArrayList<RetrievalHit>();
         for (Document document : documents) {
             double score = document.getScore() == null ? 0.0D : document.getScore().doubleValue();
-            hits.add(new RetrievalHit(document.getId(), document.getText(), score));
+            Object chunkId = document.getMetadata().get("chunkId");
+            String stableChunkId = chunkId == null ? document.getId() : chunkId.toString();
+            hits.add(new RetrievalHit(stableChunkId, document.getText(), score, citation(document)));
         }
         return hits;
+    }
+
+    /** 从 Qdrant payload 恢复来源定位，供回答层回传引用。 */
+    private Citation citation(Document document) {
+        java.util.Map<String, Object> metadata = document.getMetadata();
+        Object documentId = metadata.get("documentId");
+        Object revision = metadata.get("documentRevision");
+        Object page = metadata.get("page");
+        Object offset = metadata.get("offset");
+        if (documentId == null || revision == null || page == null || offset == null) {
+            return null;
+        }
+        return new Citation(documentId.toString(), revision.toString(),
+                ((Number) page).intValue(), ((Number) offset).intValue());
     }
 }
