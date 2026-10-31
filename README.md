@@ -22,6 +22,8 @@
 
 当前任务进度见 [TODO.md](TODO.md)，每次完成任务都会同步更新已完成项和下一步。
 
+遇到模型兼容性问题时，先查看 [TROUBLESHOOTING.md](TROUBLESHOOTING.md) 中的踩坑记录。
+
 ## 学习目标
 
 按下面的顺序阅读和运行，可以从简单闭环逐步理解 Agent：
