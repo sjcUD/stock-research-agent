@@ -14,7 +14,7 @@
 - [x] 增加 Qdrant VectorStore 适配器
 - [x] 增加 Harness 的预算、失败分类和上下文压缩基础实现
 - [x] 增加 MySQL 初始迁移脚本
-- [x] 建立 JUnit 测试，当前 19 个测试通过（2 个外部服务测试默认跳过）
+- [x] 建立 JUnit 测试，当前 20 个测试通过（3 个外部服务测试默认跳过）
 - [x] 清理不应提交的本地研究资料目录
 - [x] 重写 README 并推送到 GitHub
 
@@ -27,7 +27,7 @@
 - [x] 增加 MySQL JDBC Repository 与研究运行记录
 - [x] 增加最小 Web API 和本地内存仓储启动入口
 - [x] 完成 MySQL 容器联调并验证 JDBC 账号配置
-- [ ] 配置真实外部 Embedding provider 并进行 API 联调
+- [x] 配置真实外部 Embedding provider 并完成 API 联调
 - [ ] 完善预算、超时、取消和有限重试链路
 - [ ] 增加技术面、新闻、情绪分析师
 - [ ] 实现分析师协作与组合决策流程

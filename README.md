@@ -137,8 +137,8 @@ QDRANT_INTEGRATION=true mvn -pl stock-agent-rag -am \
 ```
 
 真实 Embedding 使用 OpenAI 兼容接口，配置方式见 [.env.example](.env.example)。配置
-`STOCK_AGENT_EMBEDDING_API_KEY` 后，Web 模块会创建 `OpenAiEmbeddingModel`；
-`STOCK_AGENT_EMBEDDING_BASE_URL` 可切换到其他兼容服务。
+`STOCK_AGENT_EMBEDDING_API_KEY` 后，Web 模块会创建 Embedding 网关；
+`STOCK_AGENT_EMBEDDING_BASE_URL` 可切换到其他兼容服务，已兼容 DashScope 的路径前缀。
 
 ## 代码约定
 

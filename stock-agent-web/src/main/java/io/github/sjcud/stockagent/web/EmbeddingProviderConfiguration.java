@@ -1,7 +1,8 @@
 package io.github.sjcud.stockagent.web;
 
 import io.github.sjcud.stockagent.llm.EmbeddingGateway;
-import io.github.sjcud.stockagent.llm.SpringAiEmbeddingGateway;
+import java.net.URI;
+import java.net.URISyntaxException;
 import org.springframework.ai.document.MetadataMode;
 import org.springframework.ai.embedding.EmbeddingModel;
 import org.springframework.ai.openai.OpenAiEmbeddingModel;
@@ -29,16 +30,43 @@ public class EmbeddingProviderConfiguration {
             @Value("${stock.agent.embedding.base-url:https://api.openai.com}") String baseUrl,
             @Value("${stock.agent.embedding.model:text-embedding-3-small}") String model,
             @Value("${stock.agent.embedding.dimensions:1536}") Integer dimensions) {
-        OpenAiApi api = OpenAiApi.builder().baseUrl(baseUrl).apiKey(apiKey).build();
+        OpenAiApi api = buildApi(baseUrl, apiKey);
         OpenAiEmbeddingOptions options = new OpenAiEmbeddingOptions();
         options.setModel(model);
         options.setDimensions(dimensions);
         return new OpenAiEmbeddingModel(api, MetadataMode.EMBED, options);
     }
 
+    /** Spring AI 默认会追加 /v1，兼容用户把 /v1 写入 base-url 的配置方式。 */
+    private String normalizeBaseUrl(String baseUrl) {
+        String value = baseUrl == null ? "" : baseUrl.trim();
+        while (value.endsWith("/")) {
+            value = value.substring(0, value.length() - 1);
+        }
+        return value.endsWith("/v1") ? value.substring(0, value.length() - 3) : value;
+    }
+
+    /** 保留 OpenAI 兼容服务的路径前缀，例如 DashScope 的 /compatible-mode。 */
+    private OpenAiApi buildApi(String baseUrl, String apiKey) {
+        String normalized = normalizeBaseUrl(baseUrl);
+        try {
+            URI uri = new URI(normalized);
+            String prefix = uri.getPath() == null ? "" : uri.getPath();
+            String path = prefix.endsWith("/v1") ? "embeddings" : "v1/embeddings";
+            return OpenAiApi.builder().baseUrl(normalized).apiKey(apiKey)
+                    .embeddingsPath(path).build();
+        } catch (URISyntaxException exception) {
+            throw new IllegalArgumentException("Embedding base-url 不合法: " + baseUrl, exception);
+        }
+    }
+
     /** 将供应商模型适配为项目内的 EmbeddingGateway。 */
     @Bean
-    public EmbeddingGateway embeddingGateway(EmbeddingModel embeddingModel) {
-        return new SpringAiEmbeddingGateway(embeddingModel);
+    public EmbeddingGateway embeddingGateway(
+            @Value("${stock.agent.embedding.base-url:https://api.openai.com}") String baseUrl,
+            @Value("${stock.agent.embedding.api-key}") String apiKey,
+            @Value("${stock.agent.embedding.model:text-embedding-3-small}") String model,
+            @Value("${stock.agent.embedding.dimensions:1536}") Integer dimensions) {
+        return new OpenAiCompatibleEmbeddingGateway(baseUrl, apiKey, model, dimensions);
     }
 }
