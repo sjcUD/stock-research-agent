@@ -14,7 +14,7 @@
 - [x] 增加 Qdrant VectorStore 适配器
 - [x] 增加 Harness 的预算、失败分类和上下文压缩基础实现
 - [x] 增加 MySQL 初始迁移脚本
-- [x] 建立 JUnit 测试，当前 16 个测试通过
+- [x] 建立 JUnit 测试，当前 18 个测试通过
 - [x] 清理不应提交的本地研究资料目录
 - [x] 重写 README 并推送到 GitHub
 
