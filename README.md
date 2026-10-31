@@ -138,6 +138,24 @@ QDRANT_INTEGRATION=true mvn -pl stock-agent-rag -am \
   -Dtest=QdrantLiveIntegrationTest -Dsurefire.failIfNoSpecifiedTests=false test
 ```
 
+启用 Web 应用中的真实 RAG 装配：
+
+```env
+STOCK_AGENT_QDRANT_ENABLED=true
+STOCK_AGENT_QDRANT_HOST=localhost
+STOCK_AGENT_QDRANT_GRPC_PORT=6334
+STOCK_AGENT_QDRANT_COLLECTION=stock_agent_documents
+```
+
+端到端测试会使用真实 Embedding 写入 Qdrant，并检查检索结果携带 Citation：
+
+```bash
+set -a; . ./.env; set +a
+RAG_REAL_INTEGRATION=true mvn -pl stock-agent-web -am \
+  -Dtest=RealRagQdrantIntegrationTest \
+  -Dsurefire.failIfNoSpecifiedTests=false test
+```
+
 真实 Embedding 使用 Spring AI 的 `OpenAiEmbeddingModel`，配置方式见 [.env.example](.env.example)。
 DashScope 等兼容服务保留完整的 `/compatible-mode/v1` base URL，并显式设置
 `embeddingsPath("/embeddings")`，避免 Spring AI 默认 `/v1/embeddings` 覆盖路径前缀。
