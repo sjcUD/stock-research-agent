@@ -14,6 +14,7 @@
 - LLM、Embedding、Rerank 的统一接口和模型注册表
 - SAMPLE 数据模式和固定行情提供器
 - RAG 文档切片、检索契约与 Qdrant VectorStore 适配器
+- 基于 Apache Tika 的 PDF、Word、Excel、HTML、纯文本和 Markdown 解析器
 - Agent Harness 的预算、失败分类和上下文压缩基础实现
 - MySQL 初始迁移脚本
 
@@ -107,6 +108,8 @@ mvn test
 - `stock-agent-rag/.../store/qdrant/QdrantVectorStore.java`
 - `stock-agent-runtime/.../harness/BudgetLedger.java`
 - `stock-agent-runtime/.../harness/ContextPolicy.java`
+
+文档解析目前支持 PDF、Word、Excel、HTML、纯文本和 Markdown。解析器只负责提取文本，页码、表格结构和 OCR 等增强能力会在后续专用适配器中补充。
 
 ## 代码约定
 

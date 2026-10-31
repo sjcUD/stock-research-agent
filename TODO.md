@@ -21,6 +21,7 @@
 ## 下一步
 
 - [x] 完成纯文本解析、切片和向量入库编排
+- [x] 增加基于 Apache Tika 的 PDF、Word、Excel、HTML 解析适配器
 - [ ] 接入真实 Embedding 模型并验证 Qdrant 写入
 - [ ] 接通 Qdrant 检索、引用和来源回传
 - [ ] 增加 MySQL Repository 与研究运行记录
