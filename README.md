@@ -10,13 +10,13 @@
 - RAG：文档解析、切片、真实 Embedding、Qdrant 写入与检索、Citation 回传。
 - 解析器支持 PDF、Word、Excel、HTML、纯文本和 Markdown；目前以文本提取为主，OCR、精确页码与表格结构尚未完善。
 - Harness：调用次数预算、估算 Token 预算、截止时间检查、有限重试基础能力；多角色共享请求预算，超时和失败触发其他任务取消。
-- MySQL：运行记录 JDBC Repository 和迁移脚本；Web 创建运行接口当前默认使用内存仓储，多角色轨迹只随响应回传。
+- MySQL：工作台会话、用户/助手消息、任务状态、阶段事件、引用与角色轨迹归档；重启标记未完成任务为中断，查询不重放模型。
 - Spring AI Alibaba `ReactAgent` 最小工厂及工具循环学习探针。
 - 本地部署：三服务Compose、可执行JAR、启动/检查/停止/显式清理脚本、存活/就绪检查和日志脱敏。
 
 当前多分析师是提示词角色，调度采用 Java 执行器，尚未通过 Alibaba Graph 构建完整协作图。P9 已接入日线、技术指标及最近资讯；完整财报、实时分时和社交情绪样本尚未接入。只有一个收盘价时，角色应说明无法计算 MACD、RSI 等指标。它们不会自动获得不存在的数据，也不会执行真实交易。
 
-已接通过真实 ChatModel、Embedding、Qdrant 和 MySQL 的基础联调。真实日线已接入；P10 浅色聊天工作台已实现；会话目前保存在浏览器，MySQL会话持久化和接入聊天链路的上下文压缩尚未完成。完整进度与后续工作见 [TODO.md](TODO.md)，模型兼容性经验见 [TROUBLESHOOTING.md](TROUBLESHOOTING.md)。
+已接通过真实 ChatModel、Embedding、Qdrant 和 MySQL 的基础联调。真实日线已接入；P10 浅色聊天工作台已实现；MySQL模式可从服务端恢复会话，浏览器保留有限缓存；上下文压缩仍未接入聊天链路。完整进度与后续工作见 [TODO.md](TODO.md)，模型兼容性经验见 [TROUBLESHOOTING.md](TROUBLESHOOTING.md)。
 
 ## 模块
 
@@ -87,7 +87,7 @@ curl http://localhost:8080/api/research/chat/multi \
 3. **扇出与汇聚**：`MultiAnalystOrchestrator` 提供串行/并行模式，完成顺序用于发现失败，稳定角色顺序用于展示。
 4. **共享预算与生命周期**：并行角色竞争同一预算；截止时间限制等待；任一失败取消其他任务；串行失败后不会再启动后续角色。
 5. **综合判断**：`PortfolioManager` 接收所有报告和证据，保留分歧、不确定性及待核验条件。
-6. **可观测性**：`AgentTrace` 保存实际输入、输出与耗时；当前未做数据库持久化，也未记录失败轨迹。
+6. **可观测性**：`AgentTrace` 保存实际输入、输出与耗时；工作台已独立归档完成角色轨迹，整体失败时保留此前角色；失败阶段记录状态与安全错误，不伪造模型输出。
 7. **可替换设计**：网关隔离模型供应商，角色接口便于后续接入带工具的 Agent，向量存储接口隔离 Qdrant。
 
 这一步实现的是可测试的多角色协作基础。自主工具选择、Graph 状态管理、多轮辩论、长期记忆、上下文压缩与评测需要各自独立实现和验证。
@@ -110,7 +110,7 @@ QDRANT_INTEGRATION=true mvn -pl stock-agent-rag -am \
 
 模型 Base URL 和路径兼容配置参见 [TROUBLESHOOTING.md](TROUBLESHOOTING.md)。DashScope Embedding 保留完整 `/compatible-mode/v1` Base URL，并显式设置 `embeddingsPath("/embeddings")`。
 
-P11 已增加固定合成数据集、检索参数对比、回答规则和工具调度契约评测；运行方式和学习入口见 [评测模块说明](stock-agent-evaluation/README.md)。P12本地运行与部署已完成，后续优先补齐P6/P7的遗留任务；同时保留 P6/P7 中尚未完成的会话持久化、模型 HTTP 超时、阶段预算和上下文压缩任务。前端沿用已确定的浅色聊天交互设计。
+P11 已增加固定合成数据集、检索参数对比、回答规则和工具调度契约评测；运行方式和学习入口见 [评测模块说明](stock-agent-evaluation/README.md)。P12本地运行与部署和P6会话归档已完成，下一步补齐P7模型 HTTP 超时、阶段预算和上下文压缩。前端沿用已确定的浅色聊天交互设计。
 
 ## P9 市场数据与研究
 
@@ -177,7 +177,7 @@ P9 对应的 Agent 学习点是：工具/数据提供器边界、确定性计算
 - Markdown、表格和代码块经本地 Marked + DOMPurify 解析/净化；禁止远程图片及可执行HTML，来源链接只允许HTTP(S)。第三方版本与许可证位于 `static/vendor`。
 - 可停止后台研究、重新连接同一个任务ID、明确重试，或下载Markdown报告。POST不自动重试；轮询断开不会偷偷创建新的收费任务。取消发送中断信号并禁止发布迟到结果，底层SDK是否立即退出仍取决于其实现。
 
-会话保存在**当前浏览器 localStorage**，最多8个会话、每个最近10轮；这不是MySQL持久化或跨设备同步。任务记录在服务端内存中，最多2个研究同时运行、8个排队、100条记录，创建后3分钟截止、终态保留20分钟，重启后任务ID失效。当前使用轮询进度，不是逐Token流式生成。
+MySQL模式会话从服务端恢复，浏览器仅缓存最近8个会话、每个最近10轮；旧浏览器记录保留并可本地导出，MySQL缓存不覆盖它们，不自动导入。未启用MySQL时为显式进程内归档。最多2个研究同时运行、8个排队、100个执行对象缓存，创建后3分钟截止、终态缓存20分钟；MySQL历史独立保留，重启后未完成任务标记INTERRUPTED，不自动续跑。当前使用轮询进度，不是逐Token流式生成。详见[会话与任务归档说明](PERSISTENCE.md)。
 
 文档单文件上限10MiB，文本提取最多100万字符，超过明确拒绝并提示拆分；不静默只索引前10万字符。支持PDF、Word、Excel、HTML、TXT、Markdown，扫描图片/OCR和精确页码定位尚未完成。Tika已更新至3.3.3并验证PDF、DOCX、XLSX及长文本；原JSON入库与同步研究API继续保留。
 
@@ -186,7 +186,10 @@ P9 对应的 Agent 学习点是：工具/数据提供器边界、确定性计算
 ```text
 GET    /api/workspace                  配置能力与默认研究日期（不返回密钥）
 POST   /api/research/tasks             创建后台任务，scope=MARKET或DOCUMENTS
-GET    /api/research/tasks/{id}        查询真实阶段与成功结果
+GET    /api/research/tasks/{id}        查询实时/已归档状态、结果和独立角色轨迹
+GET    /api/conversations             分页历史会话
+GET    /api/conversations/{id}        完整轮次
+GET    /api/conversations/{id}/messages 用户和助手消息
 DELETE /api/research/tasks/{id}        显式取消
 POST   /api/rag/documents/upload      multipart文件上传，file字段
 GET    /api/rag/search                检索已索引资料
@@ -215,3 +218,9 @@ mvn -pl stock-agent-evaluation -am test -Dstock.eval.report="$PWD/evaluation-rep
 本阶段同时修复重试只扣一次 Token、取消前先扣预算、Embedding 单次批量超过已验证供应商限制，以及回答引用格式不明确的问题。调用和 Token 原子预留，失败尝试仍扣估算预算；Embedding 和 Qdrant 写入默认按10条分批，可通过适配器构造参数配置。Spring AI 继续负责协议和路径处理。
 
 指标口径与真实服务命令见 [评测模块说明](stock-agent-evaluation/README.md)。当前工具评测是确定性调度契约，回答评分是规则检查；都不等于模型自主工具能力或投资效果。无答案检索仍可能返回无关片段，已在报告单列，尚未引入相似度阈值或重排拒答策略。
+
+## P6 会话持久化与重启恢复
+
+工作台`/api/research/tasks`已接入可替换归档策略。MySQL启用时，入队前事务保存问题和任务，完成时事务保存助手正文与终态，独立保存已完成角色的实际输入、输出和耗时。服务重启只恢复历史并中断未完成任务，不自动重放模型。Compose自动启用MySQL；宿主运行需配置`STOCK_AGENT_MYSQL_ENABLED=true`及有效连接。
+
+学习入口、数据表、API、存储故障和单活边界见[PERSISTENCE.md](PERSISTENCE.md)。保存消息不等于已经完成模型上下文压缩，P7仍按TODO继续。

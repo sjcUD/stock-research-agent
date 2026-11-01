@@ -10,10 +10,14 @@ import {
   stageStates,
   chartGeometry,
   canApplyTaskView,
+  restoreTurns,
+  persistBrowserCache,
+  historySubmissionAllowed,
 } from "./workspace.js";
 
-/** 页面状态仅含本机浏览器会话；服务端任务ID用于重连，不冒充云端持久化。 */
+/** MySQL模式从服务端恢复历史；浏览器仅保留有限离线缓存，旧缓存不会自动导入数据库。 */
 const KEY = "stock-research-workspace-v1",
+  MYSQL_KEY = "stock-research-workspace-mysql-v1",
   $ = (selector) => document.querySelector(selector);
 let sessions = [],
   documents = [],
@@ -21,9 +25,20 @@ let sessions = [],
   config = null,
   active = null,
   toastTimer,
-  uploadBusy = false;
+  uploadBusy = false,
+  historyReady = false,
+  historyLoading = false,
+  historyOffset = 0,
+  hasMoreHistory = false,
+  cachedMode = "MEMORY",
+  legacyHistoryAvailable = false;
 try {
-  const saved = JSON.parse(localStorage.getItem(KEY) || "{}");
+  const legacy = JSON.parse(localStorage.getItem(KEY) || "{}");
+  legacyHistoryAvailable =
+    Array.isArray(legacy.sessions) && legacy.sessions.length > 0;
+  const mysqlSaved = localStorage.getItem(MYSQL_KEY);
+  cachedMode = mysqlSaved ? "MYSQL" : "MEMORY";
+  const saved = mysqlSaved ? JSON.parse(mysqlSaved) : legacy;
   sessions = Array.isArray(saved.sessions) ? saved.sessions.slice(0, 8) : [];
   documents = Array.isArray(saved.documents) ? saved.documents : [];
 } catch {}
@@ -69,21 +84,42 @@ function toast(text) {
 /** 只保留有限会话和轮次，容量不足时保留当前页面并明确提示。 */
 function save() {
   try {
-    localStorage.setItem(
-      KEY,
-      JSON.stringify({
+    persistBrowserCache(
+      localStorage,
+      config?.historyStorage || cachedMode,
+      {
         sessions: sessions
           .slice(0, 8)
           .map((session) => ({ ...session, turns: session.turns.slice(-10) })),
         documents: documents
           .filter((item) => item.status === "INDEXED")
           .slice(0, 30),
-      }),
+      },
+      cachedMode,
     );
-    $("#save-state").textContent = "已在本地保存";
+    $("#save-state").textContent =
+      cachedMode === "MYSQL"
+        ? "服务端历史 · 本地缓存"
+        : "浏览器缓存 · 进程内任务";
   } catch {
     $("#save-state").textContent = "仅当前页面";
   }
+}
+/** 旧记录仅本地导出，不自动上传、覆盖或转换为已入库消息。 */
+function exportLegacyHistory() {
+  const content = localStorage.getItem(KEY);
+  if (!content) {
+    toast("没有可导出的浏览器旧记录。");
+    return;
+  }
+  const url = URL.createObjectURL(
+    new Blob([content], { type: "application/json" }),
+  );
+  const link = el("a");
+  link.href = url;
+  link.download = "stock-research-browser-history.json";
+  link.click();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 /** 关闭移动导航并移除隐藏区域的键盘焦点入口。 */
 function closeSidebar() {
@@ -92,8 +128,8 @@ function closeSidebar() {
 }
 /** 开始新的证券/日期上下文，进行中任务必须先结束。 */
 function newSession() {
-  if (active) {
-    toast("请先完成或停止当前研究。");
+  if (active || historyLoading) {
+    toast("请先完成当前操作。");
     return;
   }
   current = {
@@ -113,9 +149,11 @@ function newSession() {
 function history() {
   const container = $("#history");
   container.replaceChildren();
+  if (config?.historyStorage === "MYSQL" && legacyHistoryAvailable)
+    container.append(button("导出浏览器旧记录", exportLegacyHistory));
   const query = $("#history-filter").value.trim().toLowerCase();
   const list = sessions.filter((session) =>
-    `${session.symbol} ${session.turns[0]?.question || ""}`
+    `${session.symbol} ${session.title || session.turns[0]?.question || ""}`
       .toLowerCase()
       .includes(query),
   );
@@ -131,20 +169,60 @@ function history() {
   }
   for (const session of list) {
     const node = button(
-      session.turns[0]?.question || "研究对话",
-      () => {
-        if (active) {
+      session.title || session.turns[0]?.question || "研究对话",
+      async () => {
+        if (active || historyLoading) {
           toast("请先完成或停止当前研究。");
           return;
         }
-        current = session;
-        closeSidebar();
-        render();
+        historyLoading = true;
+        setBusy();
+        try {
+          if (session.remote && !session.loaded) await loadSession(session);
+          current = session;
+          closeSidebar();
+        } catch (error) {
+          toast(error.message);
+        } finally {
+          historyLoading = false;
+          render();
+        }
+        const pending = current?.turns.find(
+          (turn) => !terminal(turn.status) && turn.taskId,
+        );
+        if (pending) reconnect(pending);
       },
       `history-item${current?.id === session.id ? " active" : ""}`,
     );
     node.prepend(el("small", "", `${session.symbol} / ${session.asOf}`));
     container.append(node);
+  }
+  if (config?.historyStorage === "MYSQL" && hasMoreHistory) {
+    container.append(
+      button("加载更多历史", async () => {
+        if (active || historyLoading) return;
+        historyLoading = true;
+        setBusy();
+        try {
+          const page = await api.conversations(historyOffset);
+          historyOffset += page.conversations.length;
+          hasMoreHistory = page.conversations.length === 50;
+          for (const meta of page.conversations)
+            if (!sessions.some((s) => s.id === meta.id))
+              sessions.push({
+                ...meta,
+                turns: [],
+                remote: true,
+                loaded: false,
+              });
+        } catch (error) {
+          toast(error.message);
+        } finally {
+          historyLoading = false;
+          render();
+        }
+      }),
+    );
   }
 }
 /** Markdown先解析再净化，并禁用远程图片/iframe，避免报告读取触发外部追踪请求。 */
@@ -206,11 +284,17 @@ function markdown(text) {
 }
 /** 统一同步任务状态、输入锁定和取消按钮。 */
 function setBusy() {
-  const busy = !!active;
-  $("#cancel").hidden = !busy;
+  const busy = !!active || historyLoading;
+  $("#cancel").hidden = !active;
   $("#send").hidden = busy;
   $("#send").disabled =
-    !config?.researchConfigured || !$("#question").value.trim();
+    !config?.researchConfigured ||
+    !$("#question").value.trim() ||
+    !historySubmissionAllowed(
+      config?.historyStorage || cachedMode,
+      cachedMode,
+      historyReady,
+    );
   $("#scope").disabled = busy;
   $("#question").disabled = busy;
   const locked = (current?.turns.length || 0) > 0 || busy;
@@ -255,6 +339,8 @@ function resultSummary(turn) {
     CANCELLED: "研究已停止",
     FAILED: "本次研究未完成",
     TIMED_OUT: "研究已超时",
+    INTERRUPTED: "研究因服务重启中断",
+    REJECTED: "研究未进入执行队列",
     DISCONNECTED: "连接已断开，可恢复任务状态",
   };
   if (names[turn.status]) return names[turn.status];
@@ -279,7 +365,7 @@ function progress(turn) {
   summary.append(
     el(
       "span",
-      `status-dot ${["QUEUED", "RUNNING"].includes(turn.status) ? "running" : ["FAILED", "TIMED_OUT", "DISCONNECTED"].includes(turn.status) ? "failed" : ""}`,
+      `status-dot ${["QUEUED", "RUNNING"].includes(turn.status) ? "running" : ["FAILED", "TIMED_OUT", "DISCONNECTED", "INTERRUPTED", "REJECTED"].includes(turn.status) ? "failed" : ""}`,
     ),
     el("span", "", resultSummary(turn)),
     icon("chevron"),
@@ -316,6 +402,12 @@ function renderTurn(turn) {
   const identity = el("div", "assistant-identity");
   identity.append(mark(), el("span", "", "研股"), el("small", "", "研究助手"));
   node.append(identity, progress(turn));
+  if (turn.traces?.length)
+    node.append(
+      button(`查看已完成角色轨迹（${turn.traces.length}）`, () =>
+        showTraces(turn),
+      ),
+    );
   if (turn.status === "COMPLETED") {
     const result = normalizeResult(turn.result);
     node.append(markdown(result.answer));
@@ -380,7 +472,14 @@ function renderTurn(turn) {
     actions.append(copy, download);
     node.append(actions);
   } else if (
-    ["FAILED", "TIMED_OUT", "CANCELLED", "DISCONNECTED"].includes(turn.status)
+    [
+      "FAILED",
+      "TIMED_OUT",
+      "CANCELLED",
+      "DISCONNECTED",
+      "INTERRUPTED",
+      "REJECTED",
+    ].includes(turn.status)
   ) {
     const box = el(
       "div",
@@ -558,6 +657,26 @@ function openDrawer(title, content) {
   $("#drawer-title").textContent = title;
   $("#drawer-content").replaceChildren(content);
   if (!$("#drawer").open) $("#drawer").showModal();
+}
+/** 失败研究也能查看已完成角色；只展示真实回调记录，不为失败角色伪造正文。 */
+function showTraces(turn) {
+  const body = el("div");
+  for (const trace of turn.traces || []) {
+    const item = el("details", "trace-input");
+    item.append(
+      el(
+        "summary",
+        "",
+        `${roles[trace.role] || trace.role} / ${trace.elapsedMillis}ms`,
+      ),
+      el("h4", "", "实际输入"),
+      el("pre", "", trace.input),
+      el("h4", "", "实际输出"),
+      el("pre", "", trace.output),
+    );
+    body.append(item);
+  }
+  openDrawer("已完成角色的执行轨迹", body);
 }
 /** 切换组合经理和角色报告，按需展开原始执行输入。 */
 function showReports(turn, initial = "PORTFOLIO_MANAGER") {
@@ -741,6 +860,7 @@ function applyView(turn, view) {
   turn.status = view.status;
   turn.phase = view.phase;
   turn.events = view.events || [];
+  turn.traces = view.traces || [];
   turn.error = view.error || "";
   if (view.result) turn.result = view.result;
   save();
@@ -748,7 +868,17 @@ function applyView(turn, view) {
 }
 /** 先创建一次后台任务，再轮询同一ID，不自动重发收费请求。 */
 async function submit(question, scope = $("#scope").value) {
-  if (active || !question.trim()) return;
+  if (active || historyLoading || !question.trim()) return;
+  if (
+    !historySubmissionAllowed(
+      config?.historyStorage || cachedMode,
+      cachedMode,
+      historyReady,
+    )
+  ) {
+    toast("历史存储尚未连接，请先恢复连接并核对已有任务。");
+    return;
+  }
   if (!config?.researchConfigured) {
     toast("研究服务尚未配置，请先检查本地服务。");
     return;
@@ -765,7 +895,7 @@ async function submit(question, scope = $("#scope").value) {
       return;
     }
     sessions.unshift(current);
-    sessions = sessions.slice(0, 8);
+    if (config?.historyStorage !== "MYSQL") sessions = sessions.slice(0, 8);
   }
   const requestQuestion = buildFollowup(question, scope, current.turns);
   const turn = {
@@ -786,12 +916,17 @@ async function submit(question, scope = $("#scope").value) {
   try {
     const view = await api.start({
       question: requestQuestion,
+      displayQuestion: question,
+      conversationId: current.id,
       symbol: current.symbol,
       asOf: current.asOf,
       scope,
       mode: "PARALLEL",
     });
     turn.taskId = view.id;
+    current.remote = config?.historyStorage === "MYSQL";
+    current.loaded = true;
+    current.title ||= question.slice(0, 100);
     applyView(turn, view);
     const stopped = await run.channel.attach(view.id);
     if (stopped) applyView(turn, stopped);
@@ -799,7 +934,9 @@ async function submit(question, scope = $("#scope").value) {
   } catch (error) {
     if (!terminal(turn.status)) {
       turn.status = turn.taskId ? "DISCONNECTED" : "FAILED";
-      turn.error = error.message;
+      turn.error = turn.taskId
+        ? error.message
+        : `${error.message} 尚未确认服务器是否已创建任务，请重新加载历史核对后再决定是否重试。`;
       save();
     }
   } finally {
@@ -983,10 +1120,69 @@ function scopeHint() {
     : "写下你的研究问题…";
   setBusy();
 }
+/** 完整报告仅在打开会话时加载，不随列表一次拉取全部轨迹。 */
+async function loadSession(session) {
+  const body = await api.conversation(session.id);
+  session.turns = restoreTurns(body.turns);
+  session.loaded = true;
+}
+/** MySQL历史为准；数据库失败保留缓存供浏览，但阻止继续发送未确认的研究。 */
+async function loadServerHistory() {
+  historyReady = false;
+  historyLoading = true;
+  setBusy();
+  try {
+    const selected = current?.id,
+      page = await api.conversations();
+    const restored = page.conversations.map((meta) => ({
+      ...meta,
+      turns: [],
+      remote: true,
+      loaded: false,
+    }));
+    const selectedSession =
+      restored.find((s) => s.id === selected) || restored[0] || null;
+    if (selectedSession) await loadSession(selectedSession);
+    // 所有查询成功后再替换缓存，详情失败不会抹掉已有离线记录。
+    sessions = restored;
+    current = selectedSession;
+    historyOffset = sessions.length;
+    hasMoreHistory = sessions.length === 50;
+    historyReady = config.historyAvailable !== false;
+    if (!historyReady)
+      throw new Error(
+        "历史写入连接已失效，请重启服务后再发起研究；已有记录仍可查看。",
+      );
+  } finally {
+    historyLoading = false;
+  }
+}
 /** 读取真实配置能力，离线时仍允许浏览本地历史。 */
 async function loadStatus() {
   try {
     config = await api.status();
+    const configuredMode =
+      config.historyStorage === "MYSQL" ? "MYSQL" : "MEMORY";
+    if (active && configuredMode !== cachedMode) {
+      historyReady = false;
+      $("#connection-error").hidden = false;
+      $("#connection-error span").textContent =
+        "历史存储模式已变化，请结束当前研究后重新连接历史。";
+      render();
+      return;
+    }
+    if (!active) {
+      const nextMode = config.historyStorage === "MYSQL" ? "MYSQL" : "MEMORY";
+      if (nextMode === "MEMORY" && cachedMode !== nextMode) {
+        const legacy = JSON.parse(localStorage.getItem(KEY) || "{}");
+        sessions = Array.isArray(legacy.sessions)
+          ? legacy.sessions.slice(0, 8)
+          : [];
+        documents = Array.isArray(legacy.documents) ? legacy.documents : [];
+        current = sessions[0] || null;
+      }
+      cachedMode = nextMode;
+    }
     $("#connection-error").hidden = false;
     $("#connection-error").hidden = true;
     $("#data-badge").textContent =
@@ -1001,13 +1197,25 @@ async function loadStatus() {
       $("#connection-error span").textContent =
         "研究服务尚未配置；已有记录仍可浏览。";
     }
+    if (config.historyStorage === "MYSQL" && !active) await loadServerHistory();
+    else
+      historyReady =
+        config.historyStorage !== "MYSQL" || config.historyAvailable !== false;
+    $("#history-storage").textContent =
+      config.historyStorage === "MYSQL"
+        ? "会话保存在 MySQL，浏览器保留缓存"
+        : "进程内历史，浏览器保留缓存";
     if (!current) newSession();
     render();
   } catch (error) {
+    if (config?.historyStorage === "MYSQL") historyReady = false;
+    $("#history-storage").textContent = "历史暂不可用，仅浏览缓存";
+    $("#save-state").textContent = "历史未确认 · 仅缓存";
     $("#data-badge").textContent = "服务未连接";
     $("#connection-error").hidden = false;
     $("#connection-error span").textContent = error.message;
     if (!current) newSession();
+    render();
   }
 }
 $("#question-form").addEventListener("submit", (event) => {
@@ -1129,7 +1337,15 @@ await loadStatus();
 const pending = current?.turns.find(
   (turn) => !terminal(turn.status) && turn.taskId,
 );
-if (pending) reconnect(pending);
+if (
+  !historySubmissionAllowed(
+    config?.historyStorage || cachedMode,
+    cachedMode,
+    historyReady,
+  )
+) {
+  render();
+} else if (pending) reconnect(pending);
 else if (current) {
   for (const turn of current.turns)
     if (!terminal(turn.status)) {

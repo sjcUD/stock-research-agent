@@ -16,10 +16,10 @@ import java.util.function.Supplier;
 
 import javax.sql.DataSource;
 
-/** 本地部署的依赖装配；当前仅检查MySQL连通，不自动改变现有内存研究仓储。 */
+/** 部署依赖装配；MySQL启用时同时为工作台归档提供DataSource。 */
 @Configuration
 public class OperationsConfiguration {
-    /** 有界连接用于就绪探测；配置显式启用时才创建，不触发建表或数据写入。 */
+    /** 显式启用有界MySQL连接，供就绪探测与工作台归档复用。 */
     @Bean
     @ConditionalOnProperty(name = "stock.agent.mysql.enabled", havingValue = "true")
     public DataSource deploymentDataSource(
@@ -41,6 +41,8 @@ public class OperationsConfiguration {
     public DependencyHealthIndicator stockDependenciesHealthIndicator(
             ObjectProvider<QdrantClient> qdrantProvider,
             ObjectProvider<DataSource> mysqlProvider,
+            ObjectProvider<io.github.sjcud.stockagent.runtime.workspace.WorkspaceRepository>
+                    workspaceProvider,
             @Value("${stock.agent.health.require-models:false}") boolean requireModels,
             @Value("${stock.agent.chat.api-key:}") String chatKey,
             @Value("${stock.agent.chat.base-url:}") String chatBase,
@@ -59,7 +61,14 @@ public class OperationsConfiguration {
                         && present(embeddingKey)
                         && present(embeddingBase)
                         && present(embeddingModel);
-        return new DependencyHealthIndicator(qdrantProbe, mysqlProbe, requireModels, configured);
+        io.github.sjcud.stockagent.runtime.workspace.WorkspaceRepository workspace =
+                workspaceProvider.getIfAvailable();
+        return new DependencyHealthIndicator(
+                qdrantProbe,
+                mysqlProbe,
+                requireModels,
+                configured,
+                workspace == null ? null : workspace::available);
     }
 
     /** gRPC探测有单次等待上限；超时/中断时取消该探测Future。 */

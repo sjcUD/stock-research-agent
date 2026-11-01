@@ -50,6 +50,9 @@ export async function request(path, options = {}) {
 }
 export const api = {
   status: () => request("/api/workspace"),
+  conversations: (offset = 0) =>
+    request(`/api/conversations?limit=50&offset=${offset}`),
+  conversation: (id) => request(`/api/conversations/${encodeURIComponent(id)}`),
   start: (body) =>
     request("/api/research/tasks", {
       method: "POST",

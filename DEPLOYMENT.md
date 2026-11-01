@@ -39,11 +39,11 @@ docker compose logs --tail=100 app
 ```
 
 - `liveness`只表示应用进程存活，不把外部服务故障当作必须重启应用的理由。
-- `readiness`显式包含`stockDependencies`：启用的Qdrant执行有界gRPC探测，启用的MySQL实际建立连接并关闭。禁用依赖不参与失败判断。
+- `readiness`显式包含`stockDependencies`：工作台归档所有权、启用的Qdrant执行有界gRPC探测，启用的MySQL实际建立连接并关闭。禁用依赖不参与失败判断。
 - 模型只检查配置是否完整，不周期性调用收费推理。健康UP不证明模型额度、网络和内容质量可用，真实验证继续使用P11集成测试。
 - 健康响应仅公开状态，不输出连接地址、异常正文或密钥；未开放Actuator env/beans/loggers等端点。
 
-依赖故障后就绪返回503，恢复后轮询重新检查。应用镜像内含一个只依赖JRE的HTTP探针，无需安装curl。MySQL连接和socket超时2秒，Qdrant探测等待2秒，探测Future超时/中断会取消；实际总耗时由连接阶段组成，容器探针允许更长读取时间。
+依赖故障后就绪返回503。Qdrant恢复后轮询重新检查；P6归档启用后，如果MySQL重启导致单活所有权连接丢失，需要`docker compose restart app`重新获取所有权并中断旧任务，不自动接管。应用镜像内含一个只依赖JRE的HTTP探针，无需安装curl。MySQL连接和socket超时2秒，Qdrant探测等待2秒，探测Future超时/中断会取消；实际总耗时由连接阶段组成，容器探针允许更长读取时间。
 
 ## 停止、恢复、清理
 
@@ -89,13 +89,13 @@ export STOCK_AGENT_QDRANT_ENABLED=true
 mvn -pl stock-agent-web spring-boot:run
 ```
 
-`application-local.properties`默认绑定127.0.0.1，应用端口可由`STOCK_AGENT_HTTP_PORT`覆盖。Qdrant连接地址仍按`.env`配置。显式设置`STOCK_AGENT_MYSQL_ENABLED=true`才启用MySQL依赖检查，默认宿主URL为`jdbc:mysql://127.0.0.1:3307/stock_agent`；用户名/密码必须与已有实例一致。
+`application-local.properties`默认绑定127.0.0.1，应用端口可由`STOCK_AGENT_HTTP_PORT`覆盖。Qdrant连接地址仍按`.env`配置。显式设置`STOCK_AGENT_MYSQL_ENABLED=true`才启用MySQL依赖检查和工作台归档，默认宿主URL为`jdbc:mysql://127.0.0.1:3307/stock_agent`；用户名/密码必须与已有实例一致。
 
 `mvn -pl stock-agent-web -am package -DskipTests`也会生成可执行JAR，可用`java -jar stock-agent-web/target/stock-agent-web-0.1.0-SNAPSHOT.jar`启动。构建JAR不自动加载`.env`，仍需显式提供环境变量。
 
 ## 当前持久化边界
 
-Compose会初始化MySQL表并验证连通，但**当前Web运行记录仍使用内存Repository**，聊天历史保存在浏览器localStorage，任务保存在进程内。重启后数据库和向量卷保留，不代表内存任务可恢复或聊天已经写入MySQL。P6/P7的会话持久化、运行轨迹存储和上下文压缩继续保留在TODO。
+Compose启用MySQL后，工作台会话、消息、任务状态和角色轨迹写入独立workspace表，首次启动自动幂等建表。重启后历史可查询，未完成任务标记INTERRUPTED，不自动继续模型调用；浏览器只保留有限缓存。最小research/runs演示接口仍为内存实现。单个数据库只允许一个工作台写入者，详情见[PERSISTENCE.md](PERSISTENCE.md)。P7上下文压缩、模型HTTP超时和阶段预算继续保留在TODO。
 
 ## 日志与构建上下文
 

@@ -8,7 +8,14 @@ export const roles = {
   PORTFOLIO_MANAGER: "组合经理",
 };
 export const terminal = (status) =>
-  ["COMPLETED", "FAILED", "CANCELLED", "TIMED_OUT"].includes(status);
+  [
+    "COMPLETED",
+    "FAILED",
+    "CANCELLED",
+    "TIMED_OUT",
+    "INTERRUPTED",
+    "REJECTED",
+  ].includes(status);
 /** 兼容市场研究与资料问答两种响应，页面不猜测缺失结论。 */
 export function normalizeResult(result = {}) {
   const research = result.research || result;
@@ -107,4 +114,34 @@ export function chartGeometry(bars, width = 600, height = 154) {
 /** 终态不可回退，防止取消后迟到的GET快照重新显示为运行中。 */
 export function canApplyTaskView(current, incoming) {
   return !terminal(current) || current === incoming;
+}
+
+/** 服务端归档是权威状态，恢复只映射数据，不自动发送模型请求。 */
+export function restoreTurns(rows = []) {
+  return rows.map((row) => ({
+    ...row.task,
+    id: row.id,
+    taskId: row.taskId,
+    question: row.question,
+    scope: row.scope,
+  }));
+}
+
+/** MySQL缓存使用独立命名空间，首次切换不会覆盖尚未迁移的浏览器旧记录。 */
+export function persistBrowserCache(
+  storage,
+  mode,
+  payload,
+  previousMode = mode,
+) {
+  const key =
+    mode === "MYSQL" || previousMode === "MYSQL"
+      ? "stock-research-workspace-mysql-v1"
+      : "stock-research-workspace-v1";
+  storage.setItem(key, JSON.stringify(payload));
+}
+
+/** 存储模式切换须先完成对应历史加载；活动任务结束前不向新模式发起研究。 */
+export function historySubmissionAllowed(mode, cachedMode, ready) {
+  return mode === cachedMode && (mode !== "MYSQL" || ready);
 }

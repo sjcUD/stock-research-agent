@@ -101,3 +101,76 @@ test("late snapshots cannot undo a terminal cancellation or completion", () => {
   assert.equal(canApplyTaskView("COMPLETED", "QUEUED"), false);
   assert.equal(canApplyTaskView("RUNNING", "COMPLETED"), true);
 });
+
+test("server interruption is terminal and history preserves original question", async () => {
+  const { terminal, restoreTurns } = await import(
+    "../stock-agent-web/src/main/resources/static/assets/workspace.js"
+  );
+  assert.equal(terminal("INTERRUPTED"), true);
+  assert.equal(terminal("REJECTED"), true);
+  const turns = restoreTurns([
+    {
+      id: "t",
+      taskId: "t",
+      question: "用户原问题",
+      scope: "DOCUMENTS",
+      task: {
+        id: "t",
+        status: "INTERRUPTED",
+        error: "服务重启",
+        events: [],
+        result: null,
+      },
+    },
+  ]);
+  assert.equal(turns[0].question, "用户原问题");
+  assert.equal(turns[0].status, "INTERRUPTED");
+  assert.equal(turns[0].taskId, "t");
+});
+
+test("saving MySQL cache does not overwrite browser-only history", async () => {
+  const { persistBrowserCache } = await import(
+    "../stock-agent-web/src/main/resources/static/assets/workspace.js"
+  );
+  const values = new Map([
+    [
+      "stock-research-workspace-v1",
+      JSON.stringify({
+        sessions: [{ id: "legacy", turns: [{ question: "旧记录" }] }],
+      }),
+    ],
+  ]);
+  const original = values.get("stock-research-workspace-v1");
+  persistBrowserCache({ setItem: (k, v) => values.set(k, v) }, "MYSQL", {
+    sessions: [{ id: "server" }],
+  });
+  assert.equal(values.get("stock-research-workspace-v1"), original);
+  assert.equal(
+    JSON.parse(values.get("stock-research-workspace-mysql-v1")).sessions[0].id,
+    "server",
+  );
+});
+
+test("storage-mode changes during an active task cannot overwrite legacy history or allow new submissions", async () => {
+  const { persistBrowserCache, historySubmissionAllowed } = await import(
+    "../stock-agent-web/src/main/resources/static/assets/workspace.js"
+  );
+  for (const [configured, cached] of [
+    ["MYSQL", "MEMORY"],
+    ["MEMORY", "MYSQL"],
+  ]) {
+    const values = new Map([
+      ["stock-research-workspace-v1", "legacy-unchanged"],
+    ]);
+    persistBrowserCache(
+      { setItem: (k, v) => values.set(k, v) },
+      configured,
+      { sessions: [] },
+      cached,
+    );
+    assert.equal(values.get("stock-research-workspace-v1"), "legacy-unchanged");
+    assert.equal(historySubmissionAllowed(configured, cached, true), false);
+  }
+  assert.equal(historySubmissionAllowed("MYSQL", "MYSQL", false), false);
+  assert.equal(historySubmissionAllowed("MYSQL", "MYSQL", true), true);
+});

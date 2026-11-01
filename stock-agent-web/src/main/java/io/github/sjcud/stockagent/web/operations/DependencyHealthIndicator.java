@@ -9,6 +9,9 @@ public final class DependencyHealthIndicator implements HealthIndicator {
     /** null表示未启用；启用的检查必须真实执行，不以配置存在代替连通。 */
     private final Supplier<Boolean> qdrantProbe, mysqlProbe;
 
+    /** 历史归档的单活所有权探测，不调用模型。 */
+    private final Supplier<Boolean> workspaceProbe;
+
     /** 模型仅检查配置完整性，健康轮询不产生收费推理调用。 */
     private final boolean requireModels, modelsConfigured;
 
@@ -18,23 +21,38 @@ public final class DependencyHealthIndicator implements HealthIndicator {
             Supplier<Boolean> mysqlProbe,
             boolean requireModels,
             boolean modelsConfigured) {
+        this(qdrantProbe, mysqlProbe, requireModels, modelsConfigured, null);
+    }
+
+    /** 保留原构造入口，同时支持工作台持久化所有权检查。 */
+    public DependencyHealthIndicator(
+            Supplier<Boolean> qdrantProbe,
+            Supplier<Boolean> mysqlProbe,
+            boolean requireModels,
+            boolean modelsConfigured,
+            Supplier<Boolean> workspaceProbe) {
         this.qdrantProbe = qdrantProbe;
         this.mysqlProbe = mysqlProbe;
         this.requireModels = requireModels;
         this.modelsConfigured = modelsConfigured;
+        this.workspaceProbe = workspaceProbe;
     }
 
     /** 外部依赖异常只影响就绪，不应影响只检查进程存活的liveness。 */
     @Override
     public Health health() {
-        String qdrant = probe(qdrantProbe), mysql = probe(mysqlProbe);
+        String qdrant = probe(qdrantProbe),
+                mysql = probe(mysqlProbe),
+                workspace = probe(workspaceProbe);
         boolean up =
                 !"DOWN".equals(qdrant)
                         && !"DOWN".equals(mysql)
+                        && !"DOWN".equals(workspace)
                         && (!requireModels || modelsConfigured);
         return (up ? Health.up() : Health.down())
                 .withDetail("qdrant", qdrant)
                 .withDetail("mysql", mysql)
+                .withDetail("workspace", workspace)
                 .withDetail(
                         "modelConfiguration",
                         modelsConfigured
