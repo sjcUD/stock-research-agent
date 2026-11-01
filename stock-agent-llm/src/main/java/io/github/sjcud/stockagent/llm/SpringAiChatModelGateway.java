@@ -52,7 +52,8 @@ public class SpringAiChatModelGateway implements ChatModelGateway {
         if (response == null
                 || response.getResult() == null
                 || response.getResult().getOutput() == null
-                || response.getResult().getOutput().getText() == null) {
+                || response.getResult().getOutput().getText() == null
+                || response.getResult().getOutput().getText().trim().isEmpty()) {
             throw new IllegalStateException("模型未返回回答正文");
         }
         org.springframework.ai.chat.metadata.Usage usage =

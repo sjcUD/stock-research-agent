@@ -23,4 +23,11 @@ public class MeasuredChatTest {
   }
  }
 
+ /** 空正文不能交给分析师作为成功结果，否则会被误判为用户输入错误。 */
+ @Test public void shouldRejectBlankModelContentBeforeCreatingAnalystResult() {
+  ChatModel model = prompt -> new ChatResponse(Arrays.asList(new Generation(new AssistantMessage("   "))));
+  IllegalStateException failure = assertThrows(IllegalStateException.class,
+    () -> new SpringAiChatModelGateway(model).complete("q"));
+  assertEquals("模型未返回回答正文", failure.getMessage());
+ }
 }

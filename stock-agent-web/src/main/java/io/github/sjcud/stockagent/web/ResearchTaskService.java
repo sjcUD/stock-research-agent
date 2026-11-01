@@ -814,6 +814,18 @@ public class ResearchTaskService implements AutoCloseable {
             if (terminal()) {
                 return;
             }
+            // 只记录异常类型链和任务标识，避免供应商异常消息泄露密钥、请求或响应正文。
+            StringBuilder types = new StringBuilder();
+            Throwable cause = exception;
+            for (int depth = 0; cause != null && depth < 12; depth++, cause = cause.getCause()) {
+                if (depth > 0) types.append(" -> ");
+                types.append(cause.getClass().getName());
+                if (cause.getStackTrace().length > 0) {
+                    types.append(" at ").append(cause.getStackTrace()[0]);
+                }
+            }
+            org.slf4j.LoggerFactory.getLogger(ResearchTaskService.class)
+                    .warn("Research task {} failed in phase {}: {}", id, phase, types);
             status = "FAILED";
             error =
                     exception instanceof IllegalArgumentException
