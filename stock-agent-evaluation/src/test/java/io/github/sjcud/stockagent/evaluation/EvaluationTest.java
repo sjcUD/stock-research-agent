@@ -57,6 +57,16 @@ public class EvaluationTest {
     }
 
     @Test
+    public void shouldApplyInclusiveSimilarityThresholdToNegativeQueries() throws Exception {
+        EvaluationDataset d = EvaluationDataset.load();
+        EvaluationDataset.Question q = d.getQuestions().get(10);
+        RetrievalHit boundary = new RetrievalHit("noise", "无关片段", 0.50, null);
+        RagEvaluator evaluator = new RagEvaluator(d);
+        assertEquals(1.0, evaluator.score(q, Collections.singletonList(boundary), 0.50).falsePositive, 1e-9);
+        assertEquals(0.0, evaluator.score(q, Collections.singletonList(boundary), 0.51).falsePositive, 1e-9);
+    }
+
+    @Test
     public void shouldRejectBadAnswerAndUnknownReferences() {
         AnswerEvaluator evaluator = new AnswerEvaluator();
         assertTrue(
@@ -121,6 +131,9 @@ public class EvaluationTest {
                             "recallAtK", "hitAtK", "mrr", "citationCoverage", "negativeAnyHitRate"))
                 assertEquals(results.get(i).get(key), repeated.get(i).get(key));
         }
+        List<Map<String, Object>> thresholded = suite.offlineWithThreshold(0.9);
+        assertEquals(18, thresholded.size());
+        assertEquals(0.9, thresholded.get(0).get("similarityThreshold"));
     }
 
     /** 所有失败查询仍进入分母，不能只统计成功子集。 */
@@ -179,6 +192,24 @@ public class EvaluationTest {
                                 false,
                                 Collections.singleton("a"))
                         .passed());
+    }
+
+    @Test
+    public void shouldMeasureLexicalFaithfulnessAndDeduplicateFacts() {
+        AnswerEvaluator evaluator = new AnswerEvaluator();
+        Map<String, String> evidence = new LinkedHashMap<String, String>();
+        evidence.put("a", "收入为120亿元");
+        AnswerEvaluator.FaithfulnessScore supported = evaluator.faithfulness(
+                "收入为120亿元[片段=a]", Arrays.asList("120亿元", "120亿元"), evidence);
+        assertEquals(1, supported.supportedFacts);
+        assertEquals(1.0, supported.coverage(), 1e-9);
+        assertTrue(supported.passed());
+        AnswerEvaluator.FaithfulnessScore unsupported = evaluator.faithfulness(
+                "收入为99亿元[片段=a]", Collections.singletonList("99亿元"), evidence);
+        assertEquals(1, unsupported.unsupportedFacts);
+        assertFalse(unsupported.passed());
+        assertEquals(1, evaluator.faithfulness("收入为120亿元[片段=unknown]",
+                Collections.singletonList("120亿元"), evidence).invalidCitations);
     }
 
     /** 多文档问题区分 Hit 与 Recall：找到一篇算命中，但召回率只有一半。 */

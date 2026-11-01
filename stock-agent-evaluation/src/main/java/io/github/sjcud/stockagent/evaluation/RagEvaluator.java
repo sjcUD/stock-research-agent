@@ -16,11 +16,19 @@ public final class RagEvaluator {
 
     /** 正例宏平均由报告层完成；无答案问题只产生 falsePositive 指标。 */
     public Score score(EvaluationDataset.Question q, List<RetrievalHit> hits) {
+        return score(q, hits, Double.NEGATIVE_INFINITY);
+    }
+
+    /** 按相似度阈值过滤后计分；等于阈值的命中保留，便于复现实验边界。 */
+    public Score score(EvaluationDataset.Question q, List<RetrievalHit> hits, double threshold) {
+        if (Double.isNaN(threshold)) throw new IllegalArgumentException("threshold 不能为 NaN");
+        List<RetrievalHit> filtered = new ArrayList<RetrievalHit>();
+        for (RetrievalHit hit : hits) if (hit != null && hit.getScore() >= threshold) filtered.add(hit);
         Set<String> found = new HashSet<String>();
         double rr = 0;
         int valid = 0, rank = 0;
         Map<String, Integer> ranked = new HashMap<String, Integer>();
-        for (RetrievalHit hit : hits) {
+        for (RetrievalHit hit : filtered) {
             if (validCitation(hit)) valid++;
             Citation c = hit.getCitation();
             String doc = c == null ? "missing:" + hit.getChunkId() : c.getDocumentId();
@@ -35,9 +43,9 @@ public final class RagEvaluator {
                 negative ? null : (double) found.size() / q.getRelevant().size(),
                 negative ? null : found.isEmpty() ? 0.0 : 1.0,
                 negative ? null : rr,
-                negative ? hits.isEmpty() ? 0.0 : 1.0 : null,
+                negative ? filtered.isEmpty() ? 0.0 : 1.0 : null,
                 valid,
-                hits.size());
+                filtered.size());
     }
 
     /** 检查来源、版本、页码、偏移、片段 ID 和原文逐字符一致，拒绝伪造 payload。 */

@@ -30,6 +30,52 @@ public final class AnswerEvaluator {
         return new Score(factsPresent, !unanswerable || abstains, citations, invalid, cited);
     }
 
+    /**
+     * 计算事实是否被回答中的有效引用逐字支持。
+     *
+     * <p>这是可重复的证据覆盖检查，不是 LLM-as-judge，也不判断事实之间的因果关系。</p>
+     */
+    public FaithfulnessScore faithfulness(String answer, List<String> facts,
+            Map<String, String> evidenceById) {
+        String text = answer == null ? "" : answer;
+        Set<String> uniqueFacts = new LinkedHashSet<String>(facts == null
+                ? Collections.<String>emptyList() : facts);
+        Set<String> citedIds = new LinkedHashSet<String>();
+        int invalid = 0;
+        Matcher matcher = CITATION.matcher(text);
+        while (matcher.find()) {
+            String id = matcher.group(1);
+            if (!evidenceById.containsKey(id)) invalid++;
+            else citedIds.add(id);
+        }
+        int supported = 0;
+        for (String fact : uniqueFacts) {
+            if (!text.contains(fact)) continue;
+            boolean found = false;
+            for (String id : citedIds) {
+                String evidence = evidenceById.get(id);
+                if (evidence != null && evidence.contains(fact)) { found = true; break; }
+            }
+            if (found) supported++;
+        }
+        int answered = 0;
+        for (String fact : uniqueFacts) if (text.contains(fact)) answered++;
+        return new FaithfulnessScore(supported, answered - supported, uniqueFacts.size(), invalid,
+                citedIds.size());
+    }
+
+    /** 事实级证据覆盖结果；不代表完整语义忠实度。 */
+    public static final class FaithfulnessScore {
+        public final int supportedFacts, unsupportedFacts, expectedFacts, invalidCitations, validCitationIds;
+        private FaithfulnessScore(int supported, int unsupported, int expected, int invalid, int valid) {
+            supportedFacts = supported; unsupportedFacts = unsupported; expectedFacts = expected;
+            invalidCitations = invalid; validCitationIds = valid;
+        }
+        /** 没有要求事实时不自动判满分，避免把空回答误报为忠实。 */
+        public boolean passed() { return expectedFacts > 0 && unsupportedFacts == 0 && invalidCitations == 0; }
+        public double coverage() { return expectedFacts == 0 ? 0.0 : (double) supportedFacts / expectedFacts; }
+    }
+
     /** 各规则独立输出，方便区分事实漏答与引用格式错误。 */
     public static final class Score {
         /** 规则命中，不代表不存在其他幻觉。 */

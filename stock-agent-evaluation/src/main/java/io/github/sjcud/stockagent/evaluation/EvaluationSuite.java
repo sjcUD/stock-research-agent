@@ -40,6 +40,18 @@ public final class EvaluationSuite {
         return results;
     }
 
+    /** 阈值实验保持与离线基线相同的18组配置，只改变检索命中下限。 */
+    public List<Map<String, Object>> offlineWithThreshold(double threshold) {
+        List<Map<String, Object>> results = new ArrayList<Map<String, Object>>();
+        for (int dimensions : new int[] {32, 128}) for (int chunk : new int[] {32, 64, 128}) {
+            VectorStore index = new EvaluationVectorIndex(EvaluationVectorIndex.hashBaseline(dimensions), dimensions);
+            index.upsert(chunks(chunk));
+            for (int topK : new int[] {1, 3, 5})
+                results.add(evaluate(index, "hash-bigram-NONSEMANTIC", dimensions, chunk, topK, threshold));
+        }
+        return results;
+    }
+
     /** 使用生产切片策略，offset 与引用回链采用同一 UTF-16 口径。 */
     public List<DocumentChunk> chunks(int size) {
         List<DocumentChunk> result = new ArrayList<DocumentChunk>();
@@ -53,11 +65,18 @@ public final class EvaluationSuite {
     /** 每个问题均纳入分母；检索异常记为 ERROR 和0分，禁止通过漏掉失败问题抬高分数。 */
     public Map<String, Object> evaluate(
             VectorStore store, String model, int dimensions, int chunk, int topK) {
+        return evaluate(store, model, dimensions, chunk, topK, Double.NEGATIVE_INFINITY);
+    }
+
+    /** 执行带相似度下限的评测；阈值写入行结果，避免报告无法复现。 */
+    public Map<String, Object> evaluate(
+            VectorStore store, String model, int dimensions, int chunk, int topK, double threshold) {
         Map<String, Object> row = new LinkedHashMap<String, Object>();
         row.put("model", model);
         row.put("dimensions", dimensions);
         row.put("chunkSize", chunk);
         row.put("topK", topK);
+        if (threshold != Double.NEGATIVE_INFINITY) row.put("similarityThreshold", threshold);
         List<Map<String, Object>> cases = new ArrayList<Map<String, Object>>();
         double recall = 0, hit = 0, mrr = 0, fp = 0;
         int positives = 0, negatives = 0, total = 0, valid = 0, errors = 0;
@@ -70,7 +89,7 @@ public final class EvaluationSuite {
             else negatives++;
             try {
                 List<RetrievalHit> hits = store.search(new RetrievalQuery(q.getText(), topK));
-                RagEvaluator.Score s = evaluator.score(q, hits);
+                RagEvaluator.Score s = evaluator.score(q, hits, threshold);
                 if (positive) {
                     recall += s.recall;
                     hit += s.hit;
@@ -150,6 +169,11 @@ public final class EvaluationSuite {
                                 Collections.singletonList("120亿元"),
                                 false,
                                 Collections.singleton(evidence.getChunkId())));
+        Map<String, String> citedEvidence = new LinkedHashMap<String, String>();
+        citedEvidence.put(evidence.getChunkId(), evidence.getText());
+        result.put("faithfulness",
+                new AnswerEvaluator().faithfulness(answer.getAnswer(),
+                        Collections.singletonList("120亿元"), citedEvidence));
         result.put(
                 "toolContract",
                 new ToolCallEvaluator()
