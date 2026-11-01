@@ -1,6 +1,6 @@
-# P12 本地运行与部署
+# 本地运行与部署
 
-目标是让学习项目可以从源码重复启动、检查、停止和恢复。运行基线JDK 21，Java源码保持Java 8风格。当前没有鉴权和真实交易功能，Compose只把应用端口绑定到本机回环地址。
+本文说明如何从源码启动、检查、停止和恢复应用。运行基线JDK 21，Java源码保持Java 8风格。当前没有鉴权和真实交易功能，Compose只把应用端口绑定到本机回环地址。
 
 ## 三服务Compose
 
@@ -22,7 +22,7 @@ test -f .env || cp .env.example .env
 STOCK_AGENT_HTTP_PORT=18080 ./scripts/dev.sh start
 ```
 
-端口也可写入`.env`。容器内部应用始终使用8080；Qdrant和MySQL不映射宿主端口，应用通过`qdrant:6334`和`mysql:3306`连接。Compose默认项目名`stock-research-agent`，不会接管以前手工创建的`stock-agent-qdrant`、`stock-agent-mysql`容器，它们的数据彼此独立。
+端口也可写入`.env`。容器内部应用始终使用8080；Qdrant和MySQL不映射宿主端口，应用通过`qdrant:6334`和`mysql:3306`连接。Compose默认项目名`stock-research-agent`，使用项目隔离的数据卷，不自动导入其他实例的数据。
 
 启动入口会构建镜像、等待MySQL/Qdrant健康、启动应用并等待就绪，失败以非零退出。首次启动需填写真实模型配置；Qdrant初始化可能通过Embedding模型确定向量维度，因此需要访问该端点。Compose显式启用Qdrant、MySQL依赖检查和模型配置检查，与宿主运行时默认关闭Qdrant的配置分开。
 
@@ -76,7 +76,7 @@ STOCK_AGENT_HTTP_PORT=18080 ./scripts/dev.sh start
 
 ## 宿主机运行
 
-现有手工容器可继续用于开发，无需迁移到Compose：
+宿主机需JDK 21、Maven 3.8+，并自行提供MySQL/Qdrant连接：
 
 ```bash
 mvn test
@@ -95,7 +95,7 @@ mvn -pl stock-agent-web spring-boot:run
 
 ## 当前持久化边界
 
-Compose启用MySQL后，工作台会话、消息、任务状态和角色轨迹写入独立workspace表，首次启动自动幂等建表。重启后历史可查询，未完成任务标记INTERRUPTED，不自动继续模型调用；浏览器只保留有限缓存。最小research/runs演示接口仍为内存实现。单个数据库只允许一个工作台写入者，详情见[PERSISTENCE.md](PERSISTENCE.md)。P7上下文压缩、模型HTTP超时和阶段预算继续保留在TODO。
+Compose启用MySQL后，工作台会话、消息、任务状态和角色轨迹写入独立workspace表，首次启动自动幂等建表。重启后历史可查询，未完成任务标记INTERRUPTED，不自动继续模型调用；浏览器只保留有限缓存。最小research/runs演示接口仍为内存实现。单个数据库只允许一个工作台写入者，详情见[PERSISTENCE.md](PERSISTENCE.md)。上下文裁剪、模型HTTP超时与父/阶段预算已接入研究流程，真实usage按可信分项结算；这些运行保护不等同于供应商账单对账。
 
 ## 日志与构建上下文
 
@@ -114,8 +114,39 @@ Compose启用MySQL后，工作台会话、消息、任务状态和角色轨迹�
 
 设计依据：[Docker Compose启动顺序](https://docs.docker.com/compose/how-tos/startup-order/)、[Spring Boot健康端点与探针](https://docs.spring.io/spring-boot/reference/actuator/endpoints.html)。官方文档说明readiness不会自动包含额外健康检查，因此本项目显式加入依赖聚合器。
 
-## 本阶段验收记录
+## 模型返回空正文或研究仅完成部分角色
 
-2026-11-01：独立Compose项目在18080端口实际从源码构建，三服务healthy；工作台、SAMPLE行情、合成资料入库/检索与真实模型引用回答通过。分别停止MySQL/Qdrant时readiness503而liveness200，恢复后readiness200；stop/start后SQL测试记录与向量引用保留。自己的SQL标记已删除，未修改原手工容器。日志扫描未出现配置的模型密钥或数据库密码。
+部分推理模型会把推理 Token 计入 `max_tokens`，额度不足可能在回答正文前截断。
+例如本地 `deepseek-v4-flash`、2048 Token、未显式设置 thinking 时曾出现部分角色失败；
+显式设置 `STOCK_AGENT_CHAT_THINKING_MODE=disabled` 后五分析师与经理示例流程通过。
+仅对支持 `thinking.type` 的供应商使用此参数，不根据模型名称自动发送扩展字段。
+修改 `.env` 后执行 `./scripts/dev.sh start` 以重建容器配置。
+若需要推理模式，应一并评估输出额度、Harness Token预算和阶段时限，不只放大单个参数。
+服务日志会记录任务ID、阶段和异常类型/位置链，不输出供应商异常正文。
 
-构建上下文校验使用确实存在的合成模块data标记，断言其不进入镜像，并同时断言Java data源码包仍在。该测试先失败再通过，避免仅靠阅读忽略规则得出安全结论。默认全量Java113项，104通过、9项外部服务测试跳过；前端9项通过。
+## 配置生效范围
+
+`.env`只由Compose插值或宿主shell显式加载。存在于模板中不代表该字段已传入容器；不要把`.env`当作容器内自动加载的Spring配置文件。
+
+| 配置组 | Compose | 宿主JVM |
+| --- | --- | --- |
+| Chat API Key/Base URL/Model/Max Tokens/Thinking | 从`.env`传入 | 导出同名变量 |
+| Embedding API Key/Base URL/Model/Dimensions | 从`.env`传入 | 导出同名变量 |
+| Qdrant collection、RAG chunk size | 从`.env`传入 | 导出同名变量 |
+| Qdrant enabled/host/gRPC端口 | 固定为true/qdrant/6334 | 按实际服务导出变量 |
+| MySQL enabled/URL/user | 固定为true、容器URL、stock | 按实际服务导出变量 |
+| MySQL password/root password | 从`.env`传入；已有卷不会自动更新账号密码 | password用于应用；root password不属于应用连接参数 |
+| HTTP宿主端口 | `.env`控制映射，容器内固定8080 | local profile读取同名变量 |
+| require models | 固定true | local profile读取同名变量 |
+| 数据mode/连接超时/读取超时/限流 | 从`.env`传入 | 导出同名变量 |
+| 公告全文、财报URL、情绪URL、缓存参数 | 当前未透传，需修改Compose environment后重建 | 导出模板中的同名变量 |
+| 文档目录/容量/OCR参数 | 当前未透传，使用应用默认；文档卷挂载/app/data | 导出模板中的同名变量，安装OCR程序 |
+
+可选财报URL须返回`{"data":[{"reportPeriod":"2025-12-31","publishedAt":"2026-03-01","currency":"CNY","revenue":"120","netProfit":"9"}]}`；情绪URL须返回`{"asOf":"2026-03-01","score":"0.2","sampleCount":20}`。URL模板必须含`%s`供证券身份替换。这是适配契约，不是任意东方财富页面或社交平台接口的通用解析器。字段含义、单位、权限、披露日期和历史可得性由接入者校验，默认未配置时返回UNAVAILABLE。
+
+## 部署后验收
+
+1. `./scripts/dev.sh check`验证依赖就绪；这不验证模型生成。
+2. `python3 examples/first-research/run.py`验证真实Embedding、索引、Chat与引用回链，需要Python 3并产生模型调用。
+3. 按[FIRST_STEPS.md](FIRST_STEPS.md)核对回答数字、推断边界和拒答；自动引用核对不替代语义核验。
+4. 修改数据模式或其他Compose映射变量后重新运行`start`，检查工作台显示的实际模式。
