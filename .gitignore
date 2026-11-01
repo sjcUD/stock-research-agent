@@ -26,3 +26,6 @@
 /docs/
 /learning/
 /research/
+
+# Generated evaluation output (fixed fixtures remain tracked)
+**/evaluation-reports/

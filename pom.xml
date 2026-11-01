@@ -21,6 +21,7 @@
         <module>stock-agent-data-provider</module>
         <module>stock-agent-research-agent</module>
         <module>stock-agent-runtime</module>
+        <module>stock-agent-evaluation</module>
         <module>stock-agent-web</module>
     </modules>
     <dependencyManagement>

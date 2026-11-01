@@ -28,6 +28,7 @@
 | stock-agent-rag | 解析、切片、检索、引用和 Qdrant 适配 |
 | stock-agent-research-agent | 工具循环、单角色与多角色研究 |
 | stock-agent-runtime | Harness、预算和运行记录仓储 |
+| stock-agent-evaluation | 固定数据集、RAG/回答/工具契约评测与参数对比报告 |
 | stock-agent-web | Spring 装配和 HTTP API |
 
 RAG 保持一个模块，内部通过接口隔离解析器、Embedding 和向量存储。MySQL 是业务记录存储，Qdrant 是首版向量存储。
@@ -104,7 +105,7 @@ QDRANT_INTEGRATION=true mvn -pl stock-agent-rag -am \
 
 模型 Base URL 和路径兼容配置参见 [TROUBLESHOOTING.md](TROUBLESHOOTING.md)。DashScope Embedding 保留完整 `/compatible-mode/v1` Base URL，并显式设置 `embeddingsPath("/embeddings")`。
 
-下一阶段为 P11 评测与质量验证；同时保留 P6/P7 中尚未完成的会话持久化、模型 HTTP 超时、阶段预算和上下文压缩任务。前端沿用已确定的浅色聊天交互设计。
+P11 已增加固定合成数据集、检索参数对比、回答规则和工具调度契约评测；运行方式和学习入口见 [评测模块说明](stock-agent-evaluation/README.md)。下一阶段为 P12 运行与部署；同时保留 P6/P7 中尚未完成的会话持久化、模型 HTTP 超时、阶段预算和上下文压缩任务。前端沿用已确定的浅色聊天交互设计。
 
 ## P9 市场数据与研究
 
@@ -197,3 +198,15 @@ npm run test:ui
 ```
 
 P10可学习：异步任务与领域执行分离、真实进度观察、排队背压、终态不可回退、取消与迟到结果竞争、断线重连/幂等边界、有限上下文选择、证据展示与HTML净化。它没有替代P7上下文压缩，也没有宣称实现Graph状态持久化。
+
+## P11 评测与质量验证
+
+`stock-agent-evaluation` 将检索指标、引用回链、回答规则与实际应用工具轨迹分别评分。固定8篇合成资料和16个问题，支持不依赖密钥的18组离线配置，以及显式启用的真实 Embedding/Qdrant/ChatModel 集成评测；JSON/Markdown 报告保存在被忽略的 `evaluation-reports/`。
+
+```bash
+mvn -pl stock-agent-evaluation -am test -Dstock.eval.report="$PWD/evaluation-reports"
+```
+
+本阶段同时修复重试只扣一次 Token、取消前先扣预算、Embedding 单次批量超过已验证供应商限制，以及回答引用格式不明确的问题。调用和 Token 原子预留，失败尝试仍扣估算预算；Embedding 和 Qdrant 写入默认按10条分批，可通过适配器构造参数配置。Spring AI 继续负责协议和路径处理。
+
+指标口径与真实服务命令见 [评测模块说明](stock-agent-evaluation/README.md)。当前工具评测是确定性调度契约，回答评分是规则检查；都不等于模型自主工具能力或投资效果。无答案检索仍可能返回无关片段，已在报告单列，尚未引入相似度阈值或重排拒答策略。

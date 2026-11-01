@@ -5,8 +5,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 /**
  * 一个研究 run 共用的最小预算账本。
  *
- * <p>reserveModel 使用原子递减，保证并行角色竞争最后一次模型额度时只有
- * 一个成功。后续会扩展工具、Embedding、摘要和实际 usage 结算。</p>
+ * <p>reserveModel 使用原子递减，保证并行角色竞争最后一次模型额度时只有 一个成功。后续会扩展工具、Embedding、摘要和实际 usage 结算。
  */
 public class BudgetLedger {
     private final AtomicInteger remainingModelCalls;
@@ -27,7 +26,7 @@ public class BudgetLedger {
     }
 
     /** 原子预留一次模型额度。 */
-    public boolean reserveModel() {
+    public synchronized boolean reserveModel() {
         while (true) {
             int current = remainingModelCalls.get();
             if (current <= 0) {
@@ -55,7 +54,7 @@ public class BudgetLedger {
     }
 
     /** 原子预留估算 Token 额度。 */
-    public boolean reserveTokens(int tokens) {
+    public synchronized boolean reserveTokens(int tokens) {
         if (tokens < 0) {
             throw new IllegalArgumentException("tokens 必须为非负");
         }
@@ -73,5 +72,23 @@ public class BudgetLedger {
     /** 返回剩余 Token 预算。 */
     public int getRemainingTokens() {
         return remainingTokens.get();
+    }
+
+    /** 原子预留一次尝试的调用次数及估算 Token；任一不足均不扣减，避免并行超支。 */
+    public synchronized boolean reserveAttempt(int tokens) {
+        if (tokens < 0) {
+            throw new IllegalArgumentException("tokens 必须为非负");
+        }
+        if (remainingModelCalls.get() < 1 || remainingTokens.get() < tokens) {
+            return false;
+        }
+        remainingModelCalls.decrementAndGet();
+        remainingTokens.addAndGet(-tokens);
+        return true;
+    }
+
+    /** 供执行轨迹与评测检查剩余调用次数。 */
+    public int getRemainingModelCalls() {
+        return remainingModelCalls.get();
     }
 }

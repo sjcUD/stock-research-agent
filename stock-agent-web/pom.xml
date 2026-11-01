@@ -9,6 +9,7 @@
   </parent>
   <artifactId>stock-agent-web</artifactId>
   <dependencies>
+    <dependency><groupId>io.github.sjcud.stockagent</groupId><artifactId>stock-agent-evaluation</artifactId><version>${project.version}</version><scope>test</scope></dependency>
     <dependency>
       <groupId>io.github.sjcud.stockagent</groupId>
       <artifactId>stock-agent-llm</artifactId>

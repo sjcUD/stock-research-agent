@@ -105,3 +105,11 @@ MULTI_RESEARCH_INTEGRATION=true mvn -pl stock-agent-web -am \
 - 新上传入口会真正处理PDF；按[Apache官方安全说明](https://tika.apache.org/security.html)升级现有Tika至3.3.3，包含既有PDF XFA XXE修复。不把其他解析风险宣称为已全面审计。
 - 纯函数测试不能证明入口脚本可解析。整理注释时曾误将async与function断开；已修复并把node --check入口及API脚本加入test:ui。
 - 资料问答必须把用户具体问题传给模型；仅用它检索而让模型继续输出固定基本面模板，会偏离问题。资料问答独立于行情源，未知市场报价明确不提供，不编造数值。
+
+## P11：小样例成功不代表批量导入成功
+
+2026-11-01真实参数评测时，DashScope兼容端点对一次超过10条文本返回400，提示 `batch size is invalid ... not be larger than 10`。这是请求条数限制，与 `/compatible-mode/v1` 路径处理无关。Spring AI 按Token分批也不保证满足条数限制。
+
+处理：`SpringAiEmbeddingGateway` 与 `QdrantVectorStore` 在原框架协议外层按条数分批，默认10，构造参数可改；验证输出数量和顺序，保留稳定片段ID让部分批次失败后可覆盖重试。该默认是当前服务实测值，不宣称所有供应商统一限制为10。回归同时覆盖5条按2/2/1提交和真实批量写入。
+
+真实回答评测还发现“保留片段标识”过于模糊，模型可能改写成自然语言出处，导致引用语法无法识别。提示词现要求原样使用 `[片段=原始片段ID]`；评测器仍独立验证实际引用，不因增加提示词便假定模型一定遵守。
