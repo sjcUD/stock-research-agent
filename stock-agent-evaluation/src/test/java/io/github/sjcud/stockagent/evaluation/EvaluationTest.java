@@ -20,6 +20,18 @@ public class EvaluationTest {
     }
 
     @Test
+    public void shouldLoadHardDatasetAndGenerateBlindTemplateWithoutAnswers() throws Exception {
+        EvaluationDataset hard = EvaluationDataset.load("/evaluation/stock-agent-synthetic-v2-hard.json");
+        assertEquals("synthetic-v2-hard", hard.getVersion());
+        assertEquals(6, hard.getQuestions().size());
+        java.nio.file.Path target = java.nio.file.Files.createTempFile("blind-review", ".csv");
+        BlindReviewTemplate.write(target, hard);
+        String csv = new String(java.nio.file.Files.readAllBytes(target), java.nio.charset.StandardCharsets.UTF_8);
+        assertTrue(csv.contains("citation_ok,faithful,notes"));
+        assertFalse(csv.contains("30亿元"));
+    }
+
+    @Test
     public void shouldScoreKnownRankingAndRejectForgedCitation() throws Exception {
         EvaluationDataset d = EvaluationDataset.load();
         EvaluationDataset.Question q = d.getQuestions().get(0);

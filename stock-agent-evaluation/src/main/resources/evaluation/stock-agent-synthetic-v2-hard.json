@@ -1,0 +1,18 @@
+{
+  "version": "synthetic-v2-hard",
+  "description": "困难近邻、否定条件和时间口径合成语料，不用于投资效果评估。",
+  "documents": [
+    {"id":"hard-alpha","revision":"v1","text":"甲公司2025年收入120亿元，同比增长12%；其中海外收入30亿元。公告称分红预案每10股3元，尚待股东大会通过。"},
+    {"id":"hard-beta","revision":"v1","text":"乙公司2025年收入120亿元，同比下降12%；经营现金流18亿元。文中没有甲公司的海外收入或分红实施记录。"},
+    {"id":"hard-gamma","revision":"v1","text":"丙公司公告日期为2026年3月，拟收购金额7亿元，尚待监管审批；这不是已经完成的交易。"},
+    {"id":"hard-delta","revision":"v1","text":"丙公司2025年研发费用7亿元，占收入12%；研发费用不是收购金额，两个数字口径不同。"}
+  ],
+  "questions": [
+    {"id":"h01","text":"甲公司海外收入是多少","relevantDocuments":["hard-alpha"],"facts":["30亿元"]},
+    {"id":"h02","text":"乙公司收入是增长还是下降","relevantDocuments":["hard-beta"],"facts":["下降12%"]},
+    {"id":"h03","text":"甲公司的3元分红已经实施了吗","relevantDocuments":["hard-alpha"],"facts":["尚待股东大会通过"]},
+    {"id":"h04","text":"丙公司收购金额和研发费用分别是多少","relevantDocuments":["hard-gamma","hard-delta"],"facts":["收购金额7亿元","研发费用7亿元"]},
+    {"id":"h05","text":"甲公司2027年净利润是多少","relevantDocuments":[],"facts":[]},
+    {"id":"h06","text":"乙公司海外收入和分红实施日期是多少","relevantDocuments":[],"facts":[]}
+  ]
+}

@@ -27,10 +27,13 @@ public final class EvaluationDataset {
 
     /** 从随源码版本控制的 UTF-8 JSON 加载，拒绝重复 ID 和悬空相关文档标注。 */
     public static EvaluationDataset load() throws Exception {
+        return load("/evaluation/stock-agent-synthetic-v1.json");
+    }
+
+    /** 从指定版本资源加载困难语料，资源必须随代码版本控制。 */
+    public static EvaluationDataset load(String resource) throws Exception {
         byte[] bytes;
-        try (InputStream in =
-                EvaluationDataset.class.getResourceAsStream(
-                        "/evaluation/stock-agent-synthetic-v1.json")) {
+        try (InputStream in = EvaluationDataset.class.getResourceAsStream(resource)) {
             if (in == null) throw new IllegalStateException("缺少固定评测数据集");
             ByteArrayOutputStream out = new ByteArrayOutputStream();
             byte[] buffer = new byte[4096];

@@ -17,7 +17,7 @@
 
 ## 数据集与指标口径
 
-固定 JSON 位于 `src/main/resources/evaluation/stock-agent-synthetic-v1.json`。包含 **8 篇虚构公司资料、16 个问题**（14 个有答案、2 个无答案），包含财务、审计、分红条件、收购审批、指标、新闻样本与研发投入；含跨文档问题和措辞变化。全部为合成事实，不能据此评估投资效果。
+基础固定 JSON 位于 `src/main/resources/evaluation/stock-agent-synthetic-v1.json`。另有困难近邻数据集 `stock-agent-synthetic-v2-hard.json`，专门覆盖同数值不同主体、否定条件、时间口径和无答案组合。基础数据集包含 **8 篇虚构公司资料、16 个问题**（14 个有答案、2 个无答案），包含财务、审计、分红条件、收购审批、指标、新闻样本与研发投入；含跨文档问题和措辞变化。全部为合成事实，不能据此评估投资效果。
 
 - Recall@K：本次前 K **片段**覆盖的相关文档数 / 该问题相关文档总数，正例宏平均。
 - Hit@K：是否找到至少一篇相关文档，正例宏平均。
@@ -80,6 +80,10 @@ mvn -pl stock-agent-runtime -am test \
 ```
 
 MySQL 用户需具备测试表的建表、插入、查询、删除权限。测试复用现有表结构，使用自动生成的会话/运行主键，结束时只删除本次记录，不清空表。外部服务测试默认跳过；启用后缺配置或服务不可用应失败。
+
+## 人工盲评
+
+可用 `BlindReviewTemplate.write(path, EvaluationDataset.load("/evaluation/stock-agent-synthetic-v2-hard.json"))` 生成不含标准答案、相关文档和事实标注的 CSV。评审者只填写 `answer`、`citation_ok`、`faithful` 和 `notes`，结果再与机器规则分数分开分析，避免把标注泄漏给回答者。
 
 ## 尚未覆盖
 
