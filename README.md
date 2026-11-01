@@ -74,7 +74,7 @@ curl http://localhost:8080/api/research/chat/multi \
 
 将 `mode` 改为 `SERIAL` 可比较串行执行。两种模式都独立分析同一份证据，串行时不会把前一个角色的结论传给后一个角色。
 
-响应包含 `mode`、`decision`（经理汇总与五份角色报告）、`evidence`（包含 Citation）和 `traces`（角色、实际模型输入、输出、耗时毫秒）。引用列表代表本次检索获得的证据，不等于模型已逐条验证并使用。执行轨迹包含问题与证据原文，调用方应按研究内容管理访问权限。
+响应包含 `mode`、实际 `engine`、`workflowState` 诊断、`decision`（经理汇总与五份角色报告）、`evidence`（包含 Citation）和 `traces`（角色、实际模型输入、输出、耗时毫秒）。引用列表代表本次检索获得的证据，不等于模型已逐条验证并使用。执行轨迹包含问题与证据原文，调用方应按研究内容管理访问权限。
 
 支持 `thinking.type` 的供应商可配置 `STOCK_AGENT_CHAT_THINKING_MODE=disabled` 进行普通研究演示，或设为 `enabled` 并预留充足输出额度；留空时不发送扩展参数。真实 HTTP 验收使用 DeepSeek、2048 输出上限、显式 `disabled`。该开关通过 Spring AI `OpenAiChatOptions.extraBody` 透传，不另建 HTTP 网关。
 
@@ -231,3 +231,10 @@ mvn -pl stock-agent-evaluation -am test -Dstock.eval.report="$PWD/evaluation-rep
 
 
 P11收口复现入口为 `scripts/evaluate.sh offline|live|blind`，详见[评测说明](stock-agent-evaluation/README.md#p11-收口验收与复现)。包含三套语料的216组参数对照、可回链片段标注、模型重排、逐结论语义裁判、真实ReactAgent工具选择/两轮追问/暂时失败恢复，以及actual usage、显式费率估算和延迟分布。模型评分与人工评分分开；人工盲评工具链已交付，未发生的人类采样不会被标为已完成。生产规模压测、账单对账与更多财报语料按需要扩展。
+
+
+## P8 Graph引擎对照
+
+已增加真实Spring AI Alibaba StateGraph执行路径。`mode`仍为`SERIAL`或`PARALLEL`；在多角色、托管市场研究与后台任务API中另传`engine=ALIBABA_GRAPH`可切换。省略engine继续使用`JAVA_EXECUTOR`。相同证据/角色/预算跨引擎复用，Graph响应包含实际状态键与已完成角色，工作台请求/结果归档保留引擎信息。
+
+学习入口见[GRAPH.md](GRAPH.md)：节点与边、基础类型状态、并行独立状态键、经理汇聚、取消/预算和真实测试。当前只实现单次图状态，未提供跨进程Saver恢复；现有UI和重启中断语义保持不变。

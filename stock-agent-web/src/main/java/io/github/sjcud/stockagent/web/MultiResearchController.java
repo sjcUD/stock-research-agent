@@ -29,12 +29,12 @@ public class MultiResearchController {
         }
         if (request == null || blank(request.getQuestion()) || blank(request.getSymbol())
                 || blank(request.getClose()) || blank(request.getAsOf()) || blank(request.getSource())
-                || request.getMode() == null) {
+                || request.getMode() == null || request.getEngine() == null) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "问题、行情快照和研究模式不能为空");
         }
         try {
             return service.ask(request.getQuestion(), new MarketSnapshot(request.getSymbol(), request.getClose(),
-                    request.getAsOf(), request.getSource()), request.getMode());
+                    request.getAsOf(), request.getSource()), request.getMode(), request.getEngine());
         } catch (TimeoutException exception) {
             throw new ResponseStatusException(HttpStatus.GATEWAY_TIMEOUT, "研究超时", exception);
         } catch (InterruptedException exception) {
@@ -53,6 +53,12 @@ public class MultiResearchController {
     public static class MultiRequest extends ResearchChatController.ChatRequest {
         /** 默认并行；可设置 SERIAL 进行对照学习。 */
         private ResearchMode mode = ResearchMode.PARALLEL;
+        /** 默认保留原Java执行器；显式ALIBABA_GRAPH启用框架图。 */
+        private ResearchEngine engine = ResearchEngine.JAVA_EXECUTOR;
+        /** 返回编排引擎。 */
+        public ResearchEngine getEngine() { return engine; }
+        /** 非法JSON枚举值由Spring返回400。 */
+        public void setEngine(ResearchEngine engine) { this.engine = engine; }
         /** 返回调度模式。 */
         public ResearchMode getMode() { return mode; }
         /** 设置调度模式，JSON 非法枚举由 Spring 返回 400。 */

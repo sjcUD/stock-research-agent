@@ -16,8 +16,13 @@ public class MarketResearchService {
     }
     /** 先校验请求再取数，避免无效问题或模式产生网络请求。 */
     public MarketResearchAnswer ask(String question, String symbol, String asOf, ResearchMode mode) throws Exception {
+        return ask(question, symbol, asOf, mode, ResearchEngine.JAVA_EXECUTOR);
+    }
+    /** 相同行情提供器的引擎对照，不额外触发重复取数。 */
+    public MarketResearchAnswer ask(String question, String symbol, String asOf, ResearchMode mode, ResearchEngine engine) throws Exception {
+        if (engine == null) throw new IllegalArgumentException("引擎不能为空");
         if (question == null || question.trim().isEmpty() || mode == null) { throw new IllegalArgumentException("问题和模式不能为空"); }
         StockResearchData data = provider.load(symbol,asOf);
-        return new MarketResearchAnswer(data,research.ask(question,data,mode));
+        return new MarketResearchAnswer(data,research.ask(question,data,mode,ResearchProgressListener.NONE,"",engine));
     }
 }

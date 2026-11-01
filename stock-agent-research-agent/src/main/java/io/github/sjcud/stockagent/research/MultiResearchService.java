@@ -8,7 +8,6 @@ import io.github.sjcud.stockagent.runtime.harness.*;
 
 import java.util.Collections;
 import java.util.List;
-import java.util.concurrent.*;
 
 /** RAG → 五个独立分析师 → 组合经理，所有模型调用共用一次请求预算。 */
 public class MultiResearchService {
@@ -17,11 +16,8 @@ public class MultiResearchService {
     /** 与向量数据库供应商无关的检索接口。 */
     private final VectorStore store;
 
-    /** 负责角色调度的编排器。 */
-    private final MultiAnalystOrchestrator orchestrator;
-
-    /** 汇总角色。 */
-    private final PortfolioManager manager;
+    /** 按实际引擎枚举注册工作流策略，新增实现不侵入取数和上下文处理。 */
+    private final java.util.Map<ResearchEngine, ResearchWorkflow> workflows;
 
     /** 请求调用次数上限，包含组合经理。 */
     private final int modelCalls;
@@ -33,8 +29,10 @@ public class MultiResearchService {
             throw new IllegalArgumentException("依赖不能为空");
         }
         this.store = store;
-        this.orchestrator = new MultiAnalystOrchestrator(analysts);
-        this.manager = manager;
+        java.util.Map<ResearchEngine, ResearchWorkflow> registry = new java.util.EnumMap<ResearchEngine, ResearchWorkflow>(ResearchEngine.class);
+        registry.put(ResearchEngine.JAVA_EXECUTOR, new ExecutorResearchWorkflow(analysts, manager));
+        registry.put(ResearchEngine.ALIBABA_GRAPH, new GraphResearchWorkflow(analysts, manager));
+        this.workflows = java.util.Collections.unmodifiableMap(registry);
         this.modelCalls = analysts.size() + 1;
     }
 
@@ -42,6 +40,11 @@ public class MultiResearchService {
     public MultiResearchAnswer ask(String question, MarketSnapshot snapshot, ResearchMode mode)
             throws Exception {
         return execute(question, snapshot, mode, "", true, ResearchProgressListener.NONE);
+    }
+
+    /** 显式选择引擎的同步对照入口。 */
+    public MultiResearchAnswer ask(String question, MarketSnapshot snapshot, ResearchMode mode, ResearchEngine engine) throws Exception {
+        return execute(question, snapshot, mode, "", true, ResearchProgressListener.NONE, "", engine);
     }
 
     /** 托管市场研究使用可追溯结构化事实，暂不混入没有历史时点元数据的通用 RAG 库。 */
@@ -63,6 +66,12 @@ public class MultiResearchService {
     /** 带历史背景的托管研究入口。 */
     public MultiResearchAnswer ask(String question, StockResearchData data, ResearchMode mode,
             ResearchProgressListener progress, String history) throws Exception {
+        return ask(question, data, mode, progress, history, ResearchEngine.JAVA_EXECUTOR);
+    }
+
+    /** 工作台显式引擎入口，取数与上下文处理在两种引擎之间完全共用。 */
+    public MultiResearchAnswer ask(String question, StockResearchData data, ResearchMode mode,
+            ResearchProgressListener progress, String history, ResearchEngine engine) throws Exception {
         if (data == null) {
             throw new IllegalArgumentException("市场数据不能为空");
         }
@@ -73,7 +82,7 @@ public class MultiResearchService {
                 new MarketContextFormatter().format(data),
                 false,
                 progress,
-                history);
+                history, engine);
     }
 
     /** 共用角色、预算和汇总流程；RAG 是否启用由入口策略决定。 */
@@ -93,7 +102,13 @@ public class MultiResearchService {
             String question, MarketSnapshot snapshot, ResearchMode mode, String marketEvidence,
             boolean includeRag, ResearchProgressListener progress, String history)
             throws Exception {
-        if (question == null || question.trim().isEmpty() || snapshot == null || mode == null) {
+        return execute(question, snapshot, mode, marketEvidence, includeRag, progress, history, ResearchEngine.JAVA_EXECUTOR);
+    }
+
+    /** 引擎选择只作用于角色/经理调度，不改变共享证据与预算配置。 */
+    private MultiResearchAnswer execute(String question, MarketSnapshot snapshot, ResearchMode mode,
+            String marketEvidence, boolean includeRag, ResearchProgressListener progress, String history, ResearchEngine engine) throws Exception {
+        if (question == null || question.trim().isEmpty() || snapshot == null || mode == null || engine == null || progress == null) {
             throw new IllegalArgumentException("问题、行情和模式不能为空");
         }
         BudgetLedger ledger =
@@ -106,14 +121,6 @@ public class MultiResearchService {
                                         Math.min(10000L, ledger.remainingMillis()),
                                         () -> Thread.currentThread().isInterrupted())
                         : Collections.<RetrievalHit>emptyList();
-        StringBuilder evidence = new StringBuilder(marketEvidence);
-        for (RetrievalHit hit : hits) {
-            evidence.append("[片段=")
-                    .append(hit.getChunkId())
-                    .append("] ")
-                    .append(hit.getText())
-                    .append('\n');
-        }
         List<ContextPolicy.Evidence> contextEvidence = new java.util.ArrayList<ContextPolicy.Evidence>();
         if (!marketEvidence.isEmpty()) contextEvidence.add(new ContextPolicy.Evidence("MARKET_FACTS", marketEvidence, 1.0D));
         for (RetrievalHit hit : hits) contextEvidence.add(new ContextPolicy.Evidence(hit.getChunkId(), hit.getText(), hit.getScore()));
@@ -126,51 +133,7 @@ public class MultiResearchService {
         ContextPolicy.Prepared prepared = contextPolicy.compact("ANALYSTS", question, facts,
                 historyLines, contextEvidence, 20000, 4000);
         String compactEvidence = prepared.getSupplement();
-        // 分析师和经理各自拥有硬上限，同时通过父账本共享整次请求的全局额度。
-        BudgetLedger analystBudget = ledger.child("ANALYSTS", modelCalls - 1,
-                45000, Math.min(110000L, ledger.remainingMillis()));
-        BudgetLedger managerBudget = ledger.child("MANAGER", 1, 15000,
-                Math.min(30000L, ledger.remainingMillis()));
-        List<AnalystResult> results =
-                orchestrator.run(question, snapshot, compactEvidence, mode, analystBudget, progress);
-        // 汇总也使用 Future 的剩余时限，避免分析师完成后经理无限等待。
-        ExecutorService pool = Executors.newSingleThreadExecutor();
-        Future<PortfolioDecision> future = null;
-        try {
-            final int tokens = manager.estimateTokens(question, results);
-            future =
-                    pool.submit(
-                            () ->
-                                    new HarnessCallExecutor(new FailureClassifier())
-                                            .execute(
-                                                    () -> {
-                                                        progress.onProgress(
-                                                                "MANAGER",
-                                                                "PORTFOLIO_MANAGER",
-                                                                "STARTED");
-                                                        PortfolioDecision decision =
-                                                                manager.decide(question, results);
-                                                        if (decision.getTrace() != null)
-                                                            progress.onTrace(decision.getTrace());
-                                                        progress.onProgress(
-                                                                "MANAGER",
-                                                                "PORTFOLIO_MANAGER",
-                                                                "COMPLETED");
-                                                        return decision;
-                                                    },
-                                                    managerBudget,
-                                                    1,
-                                                    0L,
-                                                    () -> Thread.currentThread().isInterrupted(),
-                                                    tokens));
-            return new MultiResearchAnswer(
-                    mode, future.get(Math.min(ledger.remainingMillis(), managerBudget.remainingMillis()), TimeUnit.MILLISECONDS), hits,
-                    prepared.getReport());
-        } finally {
-            if (future != null) {
-                future.cancel(true);
-            }
-            pool.shutdownNow();
-        }
+        WorkflowResult result = workflows.get(engine).execute(question, snapshot, compactEvidence, mode, ledger, progress);
+        return new MultiResearchAnswer(mode, result.getDecision(), hits, prepared.getReport(), engine, result.getState());
     }
 }

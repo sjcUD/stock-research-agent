@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.*;
 
 import io.github.sjcud.stockagent.research.AgentTrace;
 import io.github.sjcud.stockagent.research.ResearchMode;
+import io.github.sjcud.stockagent.research.ResearchEngine;
 import io.github.sjcud.stockagent.research.ResearchProgressListener;
 import io.github.sjcud.stockagent.runtime.workspace.*;
 
@@ -263,6 +264,15 @@ public class ResearchTaskService implements AutoCloseable {
         /** 独立角色串行或并行调度。 */
         private ResearchMode mode = ResearchMode.PARALLEL;
 
+        /** 单次研究实际选择的引擎；旧客户端省略时保留Java策略。 */
+        private ResearchEngine engine = ResearchEngine.JAVA_EXECUTOR;
+
+        /** 返回引擎，将随请求JSON归档。 */
+        public ResearchEngine getEngine() { return engine; }
+
+        /** 设置引擎，控制器负责校验资料问答不支持Graph。 */
+        public void setEngine(ResearchEngine engine) { this.engine = engine; }
+
         /** 返回问题。 */
         public String getQuestion() {
             return question;
@@ -321,6 +331,7 @@ public class ResearchTaskService implements AutoCloseable {
             value.asOf = asOf;
             value.scope = scope;
             value.mode = mode;
+            value.engine = engine;
             value.conversationId = conversationId;
             value.displayQuestion = displayQuestion;
             value.historyContext = historyContext;

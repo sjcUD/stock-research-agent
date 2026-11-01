@@ -15,6 +15,14 @@ public final class MultiResearchAnswer {
     /** 本次运行的角色输入输出，仅在响应中保存。 */
     private final List<AgentTrace> traces;
     private final ContextPolicy.Report contextReport;
+    /** 本轮实际使用的编排引擎。 */
+    private final ResearchEngine engine;
+    /** 图实际终态摘要；Java引擎为空对象。 */
+    private final Map<String, Object> workflowState;
+    /** 返回实际引擎，不能根据mode猜测。 */
+    public ResearchEngine getEngine() { return engine; }
+    /** 返回图状态键和已完成角色，正文仍通过原报告和trace接口查看。 */
+    public Map<String, Object> getWorkflowState() { return workflowState; }
     /** 创建不可变响应，避免前端适配层修改共享列表。 */
     public MultiResearchAnswer(ResearchMode mode, PortfolioDecision decision, List<RetrievalHit> evidence) {
         this(mode, decision, evidence, null);
@@ -23,6 +31,14 @@ public final class MultiResearchAnswer {
     /** 创建带上下文裁剪诊断的响应。 */
     public MultiResearchAnswer(ResearchMode mode, PortfolioDecision decision, List<RetrievalHit> evidence,
             ContextPolicy.Report contextReport) {
+        this(mode, decision, evidence, contextReport, ResearchEngine.JAVA_EXECUTOR, Collections.<String, Object>emptyMap());
+    }
+
+    /** 返回引擎和状态摘要，同时保持旧构造函数兼容。 */
+    public MultiResearchAnswer(ResearchMode mode, PortfolioDecision decision, List<RetrievalHit> evidence,
+            ContextPolicy.Report contextReport, ResearchEngine engine, Map<String, Object> workflowState) {
+        this.engine = engine;
+        this.workflowState = Collections.unmodifiableMap(new LinkedHashMap<String, Object>(workflowState));
         this.mode = mode;
         this.decision = decision;
         this.evidence = Collections.unmodifiableList(new ArrayList<RetrievalHit>(evidence));

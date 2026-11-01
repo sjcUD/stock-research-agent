@@ -79,7 +79,7 @@ public class WorkspaceConfiguration {
                     return new MarketResearchAnswer(
                             data,
                             service.ask(request.getQuestion(), data, request.getMode(), progress,
-                                    request.getHistoryContext()));
+                                    request.getHistoryContext(), request.getEngine()));
                 },
                 archive);
     }

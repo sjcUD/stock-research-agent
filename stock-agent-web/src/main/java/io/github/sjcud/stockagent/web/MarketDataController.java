@@ -34,13 +34,13 @@ public class MarketDataController {
     @PostMapping("/api/research/chat/market")
     public MarketResearchAnswer research(@RequestBody MarketRequest request) {
         if (request == null || blank(request.getQuestion()) || blank(request.getSymbol())
-                || blank(request.getAsOf()) || request.getMode() == null) {
+                || blank(request.getAsOf()) || request.getMode() == null || request.getEngine() == null) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST,"问题、证券代码、日期和模式不能为空");
         }
         MultiResearchService service = research.getIfAvailable();
         if (service == null) { throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE,"研究模型未就绪，请检查模型及Qdrant配置"); }
         try {
-            return new MarketResearchService(provider,service).ask(request.getQuestion(),request.getSymbol(),request.getAsOf(),request.getMode());
+            return new MarketResearchService(provider,service).ask(request.getQuestion(),request.getSymbol(),request.getAsOf(),request.getMode(),request.getEngine());
         } catch (IllegalArgumentException | DateTimeException exception) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST,"研究输入无效",exception);
         } catch (TimeoutException exception) {
@@ -65,6 +65,12 @@ public class MarketDataController {
         private String asOf;
         /** 默认并行独立分析。 */
         private ResearchMode mode = ResearchMode.PARALLEL;
+        /** 引擎与串行/并行方式独立，默认Java执行器。 */
+        private ResearchEngine engine = ResearchEngine.JAVA_EXECUTOR;
+        /** 返回引擎。 */
+        public ResearchEngine getEngine() { return engine; }
+        /** 设置对照引擎。 */
+        public void setEngine(ResearchEngine engine) { this.engine = engine; }
         /** 返回问题。 */
         public String getQuestion() { return question; }
         /** 设置问题。 */

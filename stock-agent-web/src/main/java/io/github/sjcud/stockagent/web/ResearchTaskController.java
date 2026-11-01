@@ -33,7 +33,10 @@ public class ResearchTaskController {
                     || request.getQuestion().trim().isEmpty()
                     || request.getQuestion().length() > 4000
                     || request.getScope() == null
-                    || request.getMode() == null) {
+                    || request.getMode() == null
+                    || request.getEngine() == null
+                    || (request.getScope() == ResearchTaskService.Scope.DOCUMENTS
+                        && request.getEngine() != io.github.sjcud.stockagent.research.ResearchEngine.JAVA_EXECUTOR)) {
                 throw new IllegalArgumentException();
             }
             request.setSymbol(LiveStockDataProvider.normalizeSymbol(request.getSymbol()));
