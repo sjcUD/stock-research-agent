@@ -46,14 +46,14 @@ python3 examples/first-research/run.py
 
 ## 5. 动手改变一个变量
 
-先不调用模型，用检索API对照同一问题的topK：
+先不调用Chat模型，用检索API对照同一问题的topK：
 
 ```bash
 curl -G http://127.0.0.1:8080/api/rag/search --data-urlencode 'q=晨星制造现金流风险' --data-urlencode 'topK=1'
 curl -G http://127.0.0.1:8080/api/rag/search --data-urlencode 'q=晨星制造现金流风险' --data-urlencode 'topK=5'
 ```
 
-观察命中数量、相似度、片段和引用；检索API不调用Chat，但会调用Embedding。更多片段不等于更好的回答。该API参数不会改变聊天服务内固定的topK；需要改造聊天检索时，应进入`ResearchChatService`修改并测试。
+观察命中数量、相似度、片段和引用；本样例在默认800字符窗口下只有一个片段，干净索引中topK=1与5得到相同结果是预期行为，topK只是数量上限。可再上传另一份明确标注的教学资料观察候选变化。检索API不调用Chat，但会调用Embedding。更多片段不等于更好的回答。该API参数不会改变聊天服务内固定的topK；需要改造聊天检索时，应进入`ResearchChatService`修改并测试。
 
 最后运行相关确定性测试，不需要模型密钥：
 
