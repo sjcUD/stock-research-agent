@@ -5,6 +5,7 @@ import com.fasterxml.jackson.databind.*;
 import io.github.sjcud.stockagent.research.AgentTrace;
 import io.github.sjcud.stockagent.research.ResearchMode;
 import io.github.sjcud.stockagent.research.ResearchEngine;
+import io.github.sjcud.stockagent.research.AnalystRole;
 import io.github.sjcud.stockagent.research.ResearchProgressListener;
 import io.github.sjcud.stockagent.runtime.workspace.*;
 
@@ -119,6 +120,20 @@ public class ResearchTaskService implements AutoCloseable {
             throw exception;
         }
         return get(task.id);
+    }
+
+    /** 从成功归档派生新任务，不覆盖原任务；空roles表示只重跑经理。 */
+    public synchronized TaskView rerun(String sourceId, List<AnalystRole> roles, ResearchMode mode) {
+        if (roles == null || mode == null || roles.size() > AnalystRole.values().length) throw new IllegalArgumentException("重跑角色或模式无效");
+        Set<AnalystRole> selected = EnumSet.noneOf(AnalystRole.class);
+        for (AnalystRole role : roles) if (role == null || !selected.add(role)) throw new IllegalArgumentException("重跑角色重复或无效");
+        get(sourceId); // 先补写活动缓存中的归档，不让未落库终态派生新任务。
+        ArchivedResearchSource source = new ArchivedResearchSource(archive.get(sourceId));
+        TaskRequest request = new TaskRequest(); request.question = source.question; request.displayQuestion = roles.isEmpty() ? "仅重新汇总经理报告" : "局部重跑：" + selected;
+        request.symbol = source.symbol; request.asOf = source.asOf; request.conversationId = source.conversationId; request.scope = Scope.MARKET;
+        request.mode = mode; request.engine = ResearchEngine.ALIBABA_GRAPH; request.rerunSourceId = sourceId;
+        request.rerunRoles = new ArrayList<AnalystRole>(selected); request.historyContext = "";
+        return start(request);
     }
 
     /** 返回防御性状态快照，不暴露内部可变事件列表。 */
@@ -267,6 +282,16 @@ public class ResearchTaskService implements AutoCloseable {
         /** 单次研究实际选择的引擎；旧客户端省略时保留Java策略。 */
         private ResearchEngine engine = ResearchEngine.JAVA_EXECUTOR;
 
+        /** 只由服务端派生的任务血缘；READ_ONLY防止客户端提交伪造的复用上下文。 */
+        private String rerunSourceId;
+        private List<AnalystRole> rerunRoles;
+        /** 返回可归档的服务端来源任务。 */
+        @com.fasterxml.jackson.annotation.JsonProperty(access = com.fasterxml.jackson.annotation.JsonProperty.Access.READ_ONLY)
+        public String getRerunSourceId() { return rerunSourceId; }
+        /** 返回实际重跑角色，空列表表示只汇总经理。 */
+        @com.fasterxml.jackson.annotation.JsonProperty(access = com.fasterxml.jackson.annotation.JsonProperty.Access.READ_ONLY)
+        public List<AnalystRole> getRerunRoles() { return rerunRoles == null ? null : Collections.unmodifiableList(rerunRoles); }
+
         /** 返回引擎，将随请求JSON归档。 */
         public ResearchEngine getEngine() { return engine; }
 
@@ -332,6 +357,7 @@ public class ResearchTaskService implements AutoCloseable {
             value.scope = scope;
             value.mode = mode;
             value.engine = engine;
+            value.rerunSourceId = rerunSourceId; value.rerunRoles = rerunRoles == null ? null : new ArrayList<AnalystRole>(rerunRoles);
             value.conversationId = conversationId;
             value.displayQuestion = displayQuestion;
             value.historyContext = historyContext;
@@ -395,6 +421,9 @@ public class ResearchTaskService implements AutoCloseable {
         /** 任务所属会话，客户端据此关联历史。 */
         private final String conversationId;
 
+        /** 新旧任务血缘在运行中/失败/取消时也可查询，不依赖成功result。 */
+        private final String sourceTaskId;
+
         /** 任务状态。 */
         private final String status;
 
@@ -417,6 +446,7 @@ public class ResearchTaskService implements AutoCloseable {
         private TaskView(Task task) {
             id = task.id;
             conversationId = task.input.conversationId;
+            sourceTaskId = task.input.rerunSourceId;
             status = task.status;
             phase = task.phase;
             error = task.error;
@@ -429,6 +459,7 @@ public class ResearchTaskService implements AutoCloseable {
         private TaskView(WorkspaceRepository.Entry entry, JsonNode snapshot) {
             id = entry.id;
             conversationId = entry.conversationId;
+            sourceTaskId = snapshot.path("sourceTaskId").asText(null);
             status = entry.status;
             phase = snapshot.path("phase").asText("QUEUE");
             error =
@@ -455,6 +486,9 @@ public class ResearchTaskService implements AutoCloseable {
                                 trace.path("elapsedMillis").asLong()));
             traces = Collections.unmodifiableList(restored);
         }
+
+        /** 返回来源任务；普通新研究为null。 */
+        public String getSourceTaskId() { return sourceTaskId; }
 
         /** 返回完整已完成角色轨迹；不代表未完成角色产生过模型输出。 */
         public List<AgentTrace> getTraces() {

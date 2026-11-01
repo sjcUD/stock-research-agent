@@ -2,6 +2,7 @@ package io.github.sjcud.stockagent.research;
 
 import com.alibaba.cloud.ai.graph.*;
 import com.alibaba.cloud.ai.graph.action.AsyncNodeAction;
+import com.alibaba.cloud.ai.graph.action.AsyncEdgeAction;
 import com.alibaba.cloud.ai.graph.state.strategy.ReplaceStrategy;
 import io.github.sjcud.stockagent.data.MarketSnapshot;
 import io.github.sjcud.stockagent.runtime.harness.*;
@@ -30,26 +31,58 @@ public final class GraphResearchWorkflow implements ResearchWorkflow {
     /** 运行真实StateGraph；顶层截止和共享取消旗标覆盖框架异步线程。 */
     @Override public WorkflowResult execute(String question, MarketSnapshot snapshot, String evidence, ResearchMode mode,
             BudgetLedger budget, ResearchProgressListener progress) throws Exception {
+        Set<AnalystRole> selected = EnumSet.noneOf(AnalystRole.class);
+        for (ResearchAnalyst analyst : analysts) selected.add(analyst.getRole());
+        return executeSelected(question, snapshot, evidence, mode, budget, progress, Collections.<AnalystResult>emptyList(), selected);
+    }
+
+    /** 复用同一事实快照中的完整旧报告；只执行选中角色，空集合表示只重跑经理。 */
+    public WorkflowResult executeSelected(String question, MarketSnapshot snapshot, String evidence, ResearchMode mode,
+            BudgetLedger budget, ResearchProgressListener progress, List<AnalystResult> previousReports, Set<AnalystRole> selectedRoles) throws Exception {
+        if (previousReports == null || selectedRoles == null) throw new IllegalArgumentException("重跑计划不能为空");
+        final Set<AnalystRole> selected = EnumSet.noneOf(AnalystRole.class); selected.addAll(selectedRoles);
+        final Map<String, Object> initial = ResearchGraphState.initial(question, snapshot, evidence);
+        Map<AnalystRole, AnalystResult> previous = new EnumMap<AnalystRole, AnalystResult>(AnalystRole.class);
+        Set<AnalystRole> registered = EnumSet.noneOf(AnalystRole.class); for (ResearchAnalyst analyst : analysts) registered.add(analyst.getRole());
+        if (!registered.containsAll(selected)) throw new IllegalArgumentException("选中角色未注册");
+        for (AnalystResult report : previousReports) {
+            if (report == null || !registered.contains(report.getRole()) || previous.put(report.getRole(), report) != null || !evidence.equals(report.getEvidence()))
+                throw new IllegalArgumentException("旧报告角色或证据快照不一致");
+        }
+        List<String> reused = new ArrayList<String>(), executed = new ArrayList<String>();
+        for (ResearchAnalyst analyst : analysts) {
+            if (selected.contains(analyst.getRole())) executed.add(analyst.getRole().name());
+            else {
+                AnalystResult report = previous.get(analyst.getRole());
+                if (report == null) throw new IllegalArgumentException("缺少未选角色的旧报告");
+                initial.put(ResearchGraphState.reportKey(analyst.getRole()), ResearchGraphState.encode(report)); reused.add(analyst.getRole().name());
+            }
+        }
+        initial.put("selectedRoles", executed);
         if (question == null || question.trim().isEmpty() || snapshot == null || evidence == null || mode == null || budget == null || progress == null)
             throw new IllegalArgumentException("图研究输入无效");
         final Thread caller = Thread.currentThread();
         final AtomicBoolean stopped = new AtomicBoolean();
         final AtomicReference<Exception> firstFailure = new AtomicReference<Exception>();
         final BooleanSupplier cancelled = () -> stopped.get() || caller.isInterrupted() || Thread.currentThread().isInterrupted();
-        final BudgetLedger analystBudget = WorkflowSupport.analysts(budget, analysts.size());
-        ExecutorService parallel = Executors.newFixedThreadPool(Math.min(8, analysts.size()));
+        final BudgetLedger analystBudget = WorkflowSupport.analysts(budget, selected.size());
+        ExecutorService parallel = Executors.newFixedThreadPool(Math.max(1, Math.min(8, selected.size())));
         try {
             Map<String, KeyStrategy> strategies = new HashMap<String, KeyStrategy>();
-            for (String key : Arrays.asList("question", "evidence", "market", "prepared", "decision", "managerTrace")) strategies.put(key, new ReplaceStrategy());
+            for (String key : Arrays.asList("question", "evidence", "market", "prepared", "decision", "managerTrace", "selectedRoles", "routeTaken", "dispatched")) strategies.put(key, new ReplaceStrategy());
             for (ResearchAnalyst analyst : analysts) strategies.put(ResearchGraphState.reportKey(analyst.getRole()), new ReplaceStrategy());
             StateGraph graph = new StateGraph("stock-research", () -> new HashMap<String, KeyStrategy>(strategies));
             graph.addNode("prepare", AsyncNodeAction.node_async(state -> {
                 ResearchGraphState.text(state.data(), "question"); ResearchGraphState.market(state);
                 check(cancelled, budget); progress.onProgress("GRAPH", "PREPARE", "COMPLETED");
-                return Collections.<String, Object>singletonMap("prepared", true);
+                Map<String, Object> update = new LinkedHashMap<String, Object>(); update.put("prepared", true);
+                update.put("routeTaken", selected.isEmpty() ? "REUSE_ONLY" : "RUN_SELECTED");
+                for (String role : reused) progress.onProgress("REUSE", role, "COMPLETED");
+                return update;
             }));
             List<String> nodes = new ArrayList<String>();
             for (ResearchAnalyst analyst : analysts) {
+                if (!selected.contains(analyst.getRole())) continue;
                 String node = "analyst_" + analyst.getRole().name(); nodes.add(node);
                 graph.addNode(node, AsyncNodeAction.node_async(state -> {
                     try {
@@ -79,17 +112,21 @@ public final class GraphResearchWorkflow implements ResearchWorkflow {
                 if (decision.getTrace() != null) update.put("managerTrace", ResearchGraphState.encodeTrace(decision.getTrace())); return update;
             }));
             graph.addEdge(StateGraph.START, "prepare");
-            if (mode == ResearchMode.PARALLEL) {
-                graph.addEdge("prepare", nodes); graph.addEdge(nodes, "manager");
+            graph.addNode("dispatch", AsyncNodeAction.node_async(state -> Collections.<String, Object>singletonMap("dispatched", true)));
+            Map<String, String> routes = new LinkedHashMap<String, String>(); routes.put("RUN_SELECTED", "dispatch"); routes.put("REUSE_ONLY", "manager");
+            graph.addConditionalEdges("prepare", AsyncEdgeAction.edge_async(state -> ResearchGraphState.text(state.data(), "routeTaken")), routes);
+            if (nodes.isEmpty()) graph.addEdge("dispatch", "manager");
+            else if (mode == ResearchMode.PARALLEL) {
+                graph.addEdge("dispatch", nodes); graph.addEdge(nodes, "manager");
             } else {
-                String previous = "prepare";
-                for (String node : nodes) { graph.addEdge(previous, node); previous = node; }
-                graph.addEdge(previous, "manager");
+                String previousNode = "dispatch";
+                for (String node : nodes) { graph.addEdge(previousNode, node); previousNode = node; }
+                graph.addEdge(previousNode, "manager");
             }
             graph.addEdge("manager", StateGraph.END);
-            CompiledGraph compiled = graph.compile(); compiled.setMaxIterations(analysts.size() + 5);
+            CompiledGraph compiled = graph.compile(); compiled.setMaxIterations(analysts.size() + 8);
             RunnableConfig config = RunnableConfig.builder().defaultParallelExecutor(parallel).defaultParallelAggregationStrategy(NodeAggregationStrategy.ALL_OF).build();
-            Optional<OverAllState> finalState = new DeadlineExecutor().call(() -> compiled.invoke(ResearchGraphState.initial(question, snapshot, evidence), config), budget, cancelled);
+            Optional<OverAllState> finalState = new DeadlineExecutor().call(() -> compiled.invoke(initial, config), budget, cancelled);
             if (!finalState.isPresent()) throw new IllegalStateException("图未生成终态");
             check(cancelled, budget); OverAllState state = finalState.get();
             List<AnalystResult> reports = ResearchGraphState.reports(state, analysts);
@@ -98,6 +135,10 @@ public final class GraphResearchWorkflow implements ResearchWorkflow {
             List<String> completed = new ArrayList<String>(); for (AnalystResult report : reports) completed.add(report.getRole().name());
             summary.put("completedRoles", Collections.unmodifiableList(completed)); summary.put("decisionProduced", true);
             summary.put("availableKeys", Collections.unmodifiableList(new ArrayList<String>(new TreeSet<String>(state.data().keySet()))));
+            summary.put("executedRoles", Collections.unmodifiableList(new ArrayList<String>(executed)));
+            summary.put("reusedRoles", Collections.unmodifiableList(new ArrayList<String>(reused)));
+            summary.put("routeTaken", ResearchGraphState.text(state.data(), "routeTaken"));
+            summary.put("budget", budget.snapshot());
             summary.put("mode", mode.name()); summary.put("checkpointed", false);
             return new WorkflowResult(decision, summary);
         } catch (Exception failure) {

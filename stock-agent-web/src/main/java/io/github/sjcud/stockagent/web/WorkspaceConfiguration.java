@@ -47,6 +47,14 @@ public class WorkspaceConfiguration {
             WorkspaceRepository archive) {
         return new ResearchTaskService(
                 (request, progress) -> {
+                    if (request.getRerunSourceId() != null) {
+                        MultiResearchService service = multi.getIfAvailable();
+                        if (service == null) throw new IllegalStateException("研究模型未配置");
+                        ArchivedResearchSource source = new ArchivedResearchSource(archive.get(request.getRerunSourceId()));
+                        return new ResearchRevisionAnswer(request.getRerunSourceId(), source.marketData,
+                                service.rerun(source.question, source.snapshot, source.evidence, source.reports,
+                                        new java.util.LinkedHashSet<AnalystRole>(request.getRerunRoles()), request.getMode(), progress));
+                    }
                     if (request.getScope() == ResearchTaskService.Scope.DOCUMENTS) {
                         ResearchChatService service = documents.getIfAvailable();
                         if (service == null) {

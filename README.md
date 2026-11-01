@@ -238,3 +238,6 @@ P11收口复现入口为 `scripts/evaluate.sh offline|live|blind`，详见[评�
 已增加真实Spring AI Alibaba StateGraph执行路径。`mode`仍为`SERIAL`或`PARALLEL`；在多角色、托管市场研究与后台任务API中另传`engine=ALIBABA_GRAPH`可切换。省略engine继续使用`JAVA_EXECUTOR`。相同证据/角色/预算跨引擎复用，Graph响应包含实际状态键与已完成角色，工作台请求/结果归档保留引擎信息。
 
 学习入口见[GRAPH.md](GRAPH.md)：节点与边、基础类型状态、并行独立状态键、经理汇聚、取消/预算和真实测试。当前只实现单次图状态，未提供跨进程Saver恢复；现有UI和重启中断语义保持不变。
+
+
+P8已进一步完成条件路由、基于服务端成功归档的局部重跑与真实usage预算结算。`POST /api/research/tasks/{id}/rerun`传`{"roles":["NEWS"]}`仅重跑新闻与经理，传`{"roles":[]}`仅重跑经理；固定原问题与证据，保留`sourceTaskId`，不覆盖原任务。父/子账本按可信usage替换本次预估，未知usage保守预留。完整学习说明、接口限制与计费边界见[GRAPH.md](GRAPH.md)。持久Saver跨进程续跑仍为独立选修，未冒充已完成。

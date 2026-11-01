@@ -17,7 +17,7 @@ public final class MultiResearchAnswer {
     private final ContextPolicy.Report contextReport;
     /** 本轮实际使用的编排引擎。 */
     private final ResearchEngine engine;
-    /** 图实际终态摘要；Java引擎为空对象。 */
+    /** 图终态及预算摘要；Java引擎仅提供预算快照。 */
     private final Map<String, Object> workflowState;
     /** 返回实际引擎，不能根据mode猜测。 */
     public ResearchEngine getEngine() { return engine; }

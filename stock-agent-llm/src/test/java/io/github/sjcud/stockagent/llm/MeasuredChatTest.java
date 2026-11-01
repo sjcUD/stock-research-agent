@@ -16,4 +16,11 @@ public class MeasuredChatTest {
   ChatModelGateway fake = prompt -> "ok";
   assertNull(fake.complete("q").getInputTokens());
  }
+ @Test public void sdkNormalizedMissingUsageMustNotBecomeFreeTokens() {
+  for(Usage usage : Arrays.asList(new DefaultUsage(null,null,100),new DefaultUsage(null,10),new DefaultUsage(10,null),new DefaultUsage(null,null),new DefaultUsage(10,20,99))) {
+   ChatModel model=prompt->new ChatResponse(Arrays.asList(new Generation(new AssistantMessage("ok"))),ChatResponseMetadata.builder().usage(usage).build());
+   ChatCompletion response=new SpringAiChatModelGateway(model).complete("q");assertNull(response.getInputTokens());assertNull(response.getOutputTokens());
+  }
+ }
+
 }

@@ -66,6 +66,9 @@ public class ChatModelProviderConfiguration {
     /** 将模型适配为研究 Agent 使用的网关。 */
     @Bean
     public ChatModelGateway chatModelGateway(ChatModel chatModel) {
-        return new SpringAiChatModelGateway(chatModel);
+        return new SpringAiChatModelGateway(chatModel, new io.github.sjcud.stockagent.llm.ModelUsageListener() {
+            @Override public void beforeCall() { io.github.sjcud.stockagent.runtime.harness.ModelUsageScope.beforeModelCall(); }
+            @Override public void onUsage(Integer input, Integer output) { io.github.sjcud.stockagent.runtime.harness.ModelUsageScope.record(input, output); }
+        });
     }
 }

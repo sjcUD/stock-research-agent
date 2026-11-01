@@ -19,6 +19,6 @@ public final class ExecutorResearchWorkflow implements ResearchWorkflow {
             BudgetLedger budget, ResearchProgressListener progress) throws Exception {
         List<AnalystResult> reports = orchestrator.run(question, snapshot, evidence, mode, WorkflowSupport.analysts(budget, analystCount), progress);
         PortfolioDecision decision = WorkflowSupport.manage(question, reports, manager, budget, progress, () -> Thread.currentThread().isInterrupted());
-        return new WorkflowResult(decision, Collections.<String, Object>emptyMap());
+        return new WorkflowResult(decision, Collections.<String, Object>singletonMap("budget", budget.snapshot()));
     }
 }

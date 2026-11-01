@@ -48,11 +48,15 @@ public class HarnessCallExecutor {
         RetryableOperationException lastRetryable = null;
         for (int attempt = 1; attempt <= maxAttempts; attempt++) {
             checkState(ledger, cancelled);
-            if (!ledger.reserveAttempt(estimatedTokens)) {
+            BudgetLedger.Reservation reservation = ledger.reserveAttemptWithReceipt(estimatedTokens);
+            if (reservation == null) {
                 throw new BudgetExceededException();
             }
             try {
-                return new DeadlineExecutor().call(action, ledger, cancelled);
+                T result = new DeadlineExecutor().call(() -> {
+                    try (ModelUsageScope scope = ModelUsageScope.bind(reservation, ledger, cancelled)) {return action.call();}
+                }, ledger, cancelled);
+                checkState(ledger, cancelled); return result;
             } catch (RetryableOperationException exception) {
                 lastRetryable = exception;
                 if (failureClassifier.classify(exception.getStatusCode()) != FailureClass.RETRYABLE
@@ -60,7 +64,7 @@ public class HarnessCallExecutor {
                     throw exception;
                 }
                 sleepWithinDeadline(backoffMillis, ledger, cancelled);
-            }
+            } finally { reservation.markUnknown(); }
         }
         throw lastRetryable == null ? new IllegalStateException("调用未执行") : lastRetryable;
     }
@@ -69,6 +73,7 @@ public class HarnessCallExecutor {
         if (cancelled.getAsBoolean()) {
             throw new IllegalStateException("研究任务已取消");
         }
+        if (ledger.isOverdrawn()) throw new BudgetExceededException();
         if (ledger.isExpired()) {
             throw new HarnessTimeoutException();
         }

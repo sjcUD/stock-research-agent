@@ -51,6 +51,37 @@ public class ResearchTaskController {
         }
     }
 
+    /** 局部重跑只接受角色与调度方式，问题/事实/旧报告均由原任务归档提供。 */
+    @PostMapping("/{id}/rerun")
+    @ResponseStatus(HttpStatus.ACCEPTED)
+    public ResearchTaskService.TaskView rerun(@PathVariable("id") String id, @RequestBody RerunRequest request) {
+        try {
+            if (request == null) throw new IllegalArgumentException("缺少重跑请求");
+            return tasks.rerun(id, request.getRoles(), request.getMode());
+        } catch (NoSuchElementException ex) { throw new ResponseStatusException(HttpStatus.NOT_FOUND, "来源任务不存在"); }
+        catch (IllegalArgumentException ex) { throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "只能基于已完成市场研究选择不重复角色重跑，不可改写问题或证据"); }
+        catch (RejectedExecutionException ex) { throw new ResponseStatusException(HttpStatus.TOO_MANY_REQUESTS, "研究队列已满，请稍后重试"); }
+    }
+
+    /** roles为空数组时只执行经理；不接受任何客户端旧报告或新题字段。 */
+    public static final class RerunRequest {
+        /** 明确要重跑的角色；空数组表示只更新经理。 */
+        private java.util.List<io.github.sjcud.stockagent.research.AnalystRole> roles;
+        /** 选中角色的串行/并行方式。 */
+        private io.github.sjcud.stockagent.research.ResearchMode mode = io.github.sjcud.stockagent.research.ResearchMode.PARALLEL;
+        /** 返回选中角色。 */
+        public java.util.List<io.github.sjcud.stockagent.research.AnalystRole> getRoles() { return roles; }
+        /** 设置选中角色，服务层验证空值与重复。 */
+        public void setRoles(java.util.List<io.github.sjcud.stockagent.research.AnalystRole> roles) { this.roles = roles; }
+        /** 返回调度方式。 */
+        public io.github.sjcud.stockagent.research.ResearchMode getMode() { return mode; }
+        /** 设置调度方式。 */
+        public void setMode(io.github.sjcud.stockagent.research.ResearchMode mode) { this.mode = mode; }
+        /** 显式拒绝未知字段，避免用户以为“换题后复用旧事实”有效。 */
+        @com.fasterxml.jackson.annotation.JsonAnySetter
+        public void rejectUnknown(String field, com.fasterxml.jackson.databind.JsonNode value) { throw new IllegalArgumentException("局部重跑不支持字段：" + field); }
+    }
+
     /** 轮询服务端状态，不产生新研究。 */
     @GetMapping("/{id}")
     public ResearchTaskService.TaskView get(@PathVariable("id") String id) {

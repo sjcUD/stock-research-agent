@@ -85,6 +85,16 @@ public class MultiResearchService {
                 history, engine);
     }
 
+    /** 服务端归档驱动的局部重跑：固定原问题/行情/证据，不重新取数或检索。 */
+    public MultiResearchAnswer rerun(String question, MarketSnapshot snapshot, String evidence, List<AnalystResult> previous,
+            java.util.Set<AnalystRole> selected, ResearchMode mode, ResearchProgressListener progress) throws Exception {
+        if (selected == null) throw new IllegalArgumentException("重跑角色不能为空");
+        BudgetLedger ledger = new BudgetLedger(selected.size() + 1, System.currentTimeMillis() + 120000L, 60000);
+        WorkflowResult result = ((GraphResearchWorkflow) workflows.get(ResearchEngine.ALIBABA_GRAPH))
+                .executeSelected(question, snapshot, evidence, mode, ledger, progress, previous, selected);
+        return new MultiResearchAnswer(mode, result.getDecision(), java.util.Collections.emptyList(), null, ResearchEngine.ALIBABA_GRAPH, result.getState());
+    }
+
     /** 共用角色、预算和汇总流程；RAG 是否启用由入口策略决定。 */
     private MultiResearchAnswer execute(
             String question,
