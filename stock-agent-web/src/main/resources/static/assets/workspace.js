@@ -145,3 +145,9 @@ export function persistBrowserCache(
 export function historySubmissionAllowed(mode, cachedMode, ready) {
   return mode === cachedMode && (mode !== "MYSQL" || ready);
 }
+
+/** SSE和GET共用版本闸门；旧归档没有version时按0兼容。 */
+export function canApplySnapshot(current, incoming) {
+  return canApplyTaskView(current.status, incoming.status) &&
+    Number(incoming.version || 0) >= Number(current.version || 0);
+}

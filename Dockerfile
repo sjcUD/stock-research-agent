@@ -7,6 +7,9 @@ RUN javac --release 8 -d /probe deployment/HealthProbe.java
 
 FROM eclipse-temurin:21-jre-jammy
 WORKDIR /app
+# OCR采用系统进程策略，安装中英文模型；原文卷目录由非root应用持有。
+RUN apt-get update && apt-get install -y --no-install-recommends tesseract-ocr tesseract-ocr-chi-sim \
+    && rm -rf /var/lib/apt/lists/* && mkdir -p /app/data && chown 10001:10001 /app/data
 # 使用固定非root UID，业务数据交给独立数据库/向量卷管理。
 USER 10001:10001
 COPY --from=build --chown=10001:10001 /workspace/stock-agent-web/target/stock-agent-web-0.1.0-SNAPSHOT.jar /app/app.jar

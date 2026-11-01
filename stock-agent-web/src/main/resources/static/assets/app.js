@@ -1,6 +1,6 @@
 import { marked } from "../vendor/marked.js";
 import DOMPurify from "../vendor/purify.js";
-import { api, TaskChannel } from "./api.js";
+import { api, TaskChannel, TaskEventChannel } from "./api.js";
 import {
   roles,
   terminal,
@@ -9,7 +9,7 @@ import {
   safeUrl,
   stageStates,
   chartGeometry,
-  canApplyTaskView,
+  canApplySnapshot,
   restoreTurns,
   persistBrowserCache,
   historySubmissionAllowed,
@@ -408,6 +408,12 @@ function renderTurn(turn) {
         showTraces(turn),
       ),
     );
+  if (turn.draftAnswer && turn.status !== "COMPLETED") {
+    const draft = el("section", "stream-draft");
+    draft.append(el("small", "", terminal(turn.status) ? "未完成草稿 · 不作为研究结论" : "正在生成 · 未完成草稿"),
+      el("div", "stream-draft-body", turn.draftAnswer));
+    node.append(draft);
+  }
   if (turn.status === "COMPLETED") {
     const result = normalizeResult(turn.result);
     node.append(markdown(result.answer));
@@ -784,26 +790,68 @@ function showSources(turn) {
       el(
         "p",
         "help",
-        "资料问答未按历史披露时点过滤。当前解析器以文本片段定位，页码尚未精确还原。",
+        "资料问答未按历史披露时点过滤。PDF引用对应实体页；其他格式显示解析全文。OCR文字请对照原件复核。",
       ),
     );
     for (const hit of result.evidence) {
       const document = documents.find(
         (item) => item.documentId === hit.citation?.documentId,
       );
-      wrapper.append(
-        sourceItem(
-          document?.filename || hit.citation?.documentId || "检索片段",
-          hit.text,
-          null,
-          `片段：${hit.chunkId}；版本：${hit.citation?.revision || "未知"}；相似度：${Number(hit.score).toFixed(3)}`,
-        ),
-      );
+      const item = sourceItem(
+        document?.filename || hit.citation?.documentId || "检索片段", hit.text, null,
+        `片段：${hit.chunkId}；页/段：${hit.citation?.page || 1}；版本：${hit.citation?.revision || "未知"}；相似度：${Number(hit.score).toFixed(3)}`);
+      if (hit.citation?.documentId && hit.citation?.revision)
+        item.append(button("查看引用原文", () => previewDocument(hit.citation, hit.text)));
+      wrapper.append(item);
     }
     if (!result.evidence.length)
       wrapper.append(el("p", "empty-list", "本次没有检索到可展示的资料片段。"));
   }
   openDrawer("来源与证据", wrapper);
+}
+/** 原文文本始终使用文本节点；仅完全匹配的页内偏移标记引用。 */
+async function previewDocument(citation, fragment = "") {
+  const wrapper = el("div", "document-preview");
+  wrapper.append(el("p", "help", "正在读取已归档原文…"));
+  openDrawer("原文预览", wrapper);
+  try {
+    const id = citation.documentId, revision = citation.revision;
+    const meta = await api.document(id, revision);
+    let page = Math.min(Math.max(Number(citation.page) || 1, 1), meta.pageCount);
+    const heading = el("p", "help", `${meta.status} · ${meta.physicalPages ? "PDF实体页" : "解析全文（不表示原文件物理页）"} · OCR ${meta.ocrPages}页`);
+    const controls = el("div", "preview-controls");
+    const pageLabel = el("span");
+    const body = el("pre", "document-page");
+    const file = el("a", "", meta.physicalPages ? "在新窗口打开PDF原件" : "下载原件");
+    file.href = api.documentFile(id, revision); file.target = "_blank"; file.rel = "noopener";
+    let frame;
+    if (meta.physicalPages) {
+      frame = el("iframe", "pdf-preview"); frame.title = "PDF原件";
+      frame.src = `${file.href}#page=${page}`;
+    }
+    let requestVersion = 0;
+    const load = async () => {
+      const version = ++requestVersion, requested = page;
+      pageLabel.textContent = `${page} / ${meta.pageCount}`;
+      if (frame) frame.src = `${file.href}#page=${page}`;
+      body.textContent = "正在读取…";
+      try {
+        const parsed = await api.page(id, revision, requested);
+        if (version !== requestVersion) return;
+        body.replaceChildren();
+        const offset = Number(citation.offset);
+        if (fragment && requested === citation.page && Number.isInteger(offset) && offset >= 0 && parsed.text.slice(offset, offset + fragment.length) === fragment) {
+          body.append(document.createTextNode(parsed.text.slice(0, offset)), el("mark", "", fragment), document.createTextNode(parsed.text.slice(offset + fragment.length)));
+        } else body.textContent = parsed.text || "此页没有可提取文字。";
+        if (parsed.ocr) body.prepend(el("small", "ocr-notice", "OCR识别文字，请对照原件复核。\n"));
+      } catch (error) { if (version === requestVersion) body.textContent = error.message; }
+    };
+    controls.append(button("上一页", () => { if (page > 1) { page--; load(); } }), pageLabel,
+      button("下一页", () => { if (page < meta.pageCount) { page++; load(); } }), file);
+    wrapper.replaceChildren(heading, controls, body);
+    if (frame) wrapper.append(frame);
+    await load();
+  } catch (error) { wrapper.replaceChildren(el("p", "error-panel", error.message)); }
 }
 /** 导出真实报告及来源为Markdown文本。 */
 function downloadReport(turn) {
@@ -854,15 +902,33 @@ async function poll(turn, run) {
     await new Promise((resolve) => setTimeout(resolve, 600));
   }
 }
+/** SSE断流后读取同一任务，网络重连不会重复计费。 */
+async function observe(turn, run) {
+  run.stream = new TaskEventChannel(turn.taskId, (view) => {
+    if (active === run) applyView(turn, view);
+  });
+  const completed = await run.stream.done;
+  if (!completed && active === run && !terminal(turn.status)) await poll(turn, run);
+}
 /** 拒绝迟到快照将终态回退，并保存一致的状态。 */
 function applyView(turn, view) {
-  if (!canApplyTaskView(turn.status, view.status)) return;
+  if (!canApplySnapshot(turn, view)) return;
+  const draftOnly = turn.status === view.status && turn.phase === view.phase &&
+    JSON.stringify(turn.events || []) === JSON.stringify(view.events || []) && !terminal(view.status);
+  turn.version = view.version || 0;
+  turn.draftAnswer = view.draftAnswer || "";
+  if (terminal(view.status) && active?.turn === turn) active.stream?.close(true);
   turn.status = view.status;
   turn.phase = view.phase;
   turn.events = view.events || [];
   turn.traces = view.traces || [];
   turn.error = view.error || "";
   if (view.result) turn.result = view.result;
+  if (draftOnly) {
+    const article = [...document.querySelectorAll(".turn")].find((node) => node.dataset.id === turn.id);
+    const body = article?.querySelector(".stream-draft-body");
+    if (body) { body.textContent = turn.draftAnswer; return; }
+  }
   save();
   render();
 }
@@ -930,7 +996,7 @@ async function submit(question, scope = $("#scope").value) {
     applyView(turn, view);
     const stopped = await run.channel.attach(view.id);
     if (stopped) applyView(turn, stopped);
-    if (!terminal(turn.status)) await poll(turn, run);
+    if (!terminal(turn.status)) await observe(turn, run);
   } catch (error) {
     if (!terminal(turn.status)) {
       turn.status = turn.taskId ? "DISCONNECTED" : "FAILED";
@@ -962,7 +1028,7 @@ async function reconnect(turn) {
   turn.status = "RUNNING";
   render();
   try {
-    await poll(turn, run);
+    await observe(turn, run);
   } catch (error) {
     if (!terminal(turn.status)) {
       turn.status = error.status === 404 ? "FAILED" : "DISCONNECTED";
@@ -986,12 +1052,12 @@ async function library() {
   );
   const input = el("input");
   input.type = "file";
-  input.accept = ".pdf,.doc,.docx,.xls,.xlsx,.html,.htm,.txt,.md,.markdown";
+  input.accept = ".pdf,.doc,.docx,.xls,.xlsx,.html,.htm,.txt,.md,.markdown,.png,.jpg,.jpeg";
   input.hidden = true;
   const upload = button("", () => input.click(), "library-upload");
   upload.append(
     el("span", "", uploadBusy ? "正在解析并建立索引…" : "选择研究文档"),
-    el("small", "", "PDF、Word、Excel、HTML、TXT、Markdown / 最大10MiB"),
+    el("small", "", "PDF、Word、Excel、HTML、TXT、Markdown、PNG、JPEG / 最大10MiB"),
   );
   upload.disabled = uploadBusy || !config?.ragConfigured;
   input.addEventListener("change", async () => {
@@ -1018,7 +1084,9 @@ async function library() {
         library();
     }
   });
-  wrapper.append(upload, input);
+  wrapper.append(upload, input, el("p", "help", config?.ocrAvailable
+    ? "OCR已就绪：支持扫描PDF及PNG/JPEG。PDF最多100页，其中OCR最多20页；识别文字可能有误。"
+    : "OCR尚未就绪：可上传文本PDF及Office等文档，扫描件需要配置本地OCR语言模型。"));
   if (!config?.ragConfigured)
     wrapper.append(el("p", "help", "资料索引服务尚未配置。"));
   if (!documents.length)
@@ -1026,7 +1094,7 @@ async function library() {
       el(
         "p",
         "empty-list",
-        "尚未上传研究资料。扫描图片和OCR暂不支持，解析页码也尚未精确还原。",
+        "尚未上传研究资料。索引完成后可查看解析全文与原件；PDF保留实体页码。",
       ),
     );
   for (const record of documents) {
@@ -1046,6 +1114,8 @@ async function library() {
       ),
     );
     row.append(info);
+    if (record.documentId && record.revision)
+      row.append(button("查看原文", () => previewDocument(record)));
     wrapper.append(row);
   }
   const switchScope = el("div", "library-scope");

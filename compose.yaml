@@ -65,8 +65,11 @@ services:
         condition: service_healthy
       qdrant:
         condition: service_healthy
+    volumes:
+      - document-data:/app/data
     stop_grace_period: 30s
     restart: unless-stopped
 volumes:
   mysql-data:
   qdrant-data:
+  document-data:

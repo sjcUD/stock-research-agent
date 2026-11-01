@@ -241,3 +241,12 @@ P11收口复现入口为 `scripts/evaluate.sh offline|live|blind`，详见[评�
 
 
 P8已进一步完成条件路由、基于服务端成功归档的局部重跑与真实usage预算结算。`POST /api/research/tasks/{id}/rerun`传`{"roles":["NEWS"]}`仅重跑新闻与经理，传`{"roles":[]}`仅重跑经理；固定原问题与证据，保留`sourceTaskId`，不覆盖原任务。父/子账本按可信usage替换本次预估，未知usage保守预留。完整学习说明、接口限制与计费边界见[GRAPH.md](GRAPH.md)。持久Saver跨进程续跑仍为独立选修，未冒充已完成。
+
+
+### P10：增量研究与文档复核
+
+后台研究任务通过同一个任务 ID 提供 SSE 快照；浏览器断流后回退到状态查询，不会重复创建模型任务。模型网关使用 Spring AI 原生流式接口，前端展示未完成草稿，只有任务完成才发布最终答案。每个任务共用预算和截止时间，取消会关闭流订阅并释放后台执行资源。
+
+RAG 文档默认归档到 `data/documents`。PDF 按实体页解析并保留空白页编号，扫描 PDF 和 PNG/JPEG 在配置 Tesseract 与 `chi_sim+eng` 后执行有界 OCR；Office、HTML、文本文件保留逻辑全文，不虚构物理页。原文接口只接受服务端生成的文档 ID/版本，HTML 原件以附件返回，PDF 可按页打开，引用片段会在页内精确匹配时高亮。
+
+本地运行 OCR 需要安装 Tesseract 及语言包；Compose 镜像已包含 OCR 依赖，并使用 `document-data` 数据卷保存原文。限制为单文件 10MiB、PDF 100 页且最多 20 页 OCR、单图 20MP、提取文本 100 万字符。OCR 结果仅供检索，阅读结论时应对照原件。

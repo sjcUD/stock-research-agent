@@ -34,6 +34,17 @@ public class FundamentalsAnalyst {
         return chatModel.chat(buildPrompt(question, snapshot, evidence));
     }
 
+    /** 资料回答增量入口，保留与同步回答完全相同的提示词。 */
+    public String analyzeStreaming(
+            String question,
+            MarketSnapshot snapshot,
+            String evidence,
+            java.util.function.Consumer<String> onDelta) {
+        return chatModel
+                .completeStreaming(buildPrompt(question, snapshot, evidence), onDelta)
+                .getText();
+    }
+
     /** 与真实调用共用输入构造器，归档不得重建不同提示词或编造模型输入。 */
     public String buildPrompt(String question, MarketSnapshot snapshot, String evidence) {
         if (snapshot == null || question == null || question.trim().isEmpty()) {

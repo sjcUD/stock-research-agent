@@ -17,6 +17,10 @@ import java.util.*;
 /** 工作台能力与上传边界；不将模型密钥、供应商地址或本地路径返回页面。 */
 @RestController
 public class WorkspaceController {
+    /** 可选OCR能力，关闭时不阻断其他格式解析。 */
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private io.github.sjcud.stockagent.rag.parser.OcrEngine ocr;
+
     /** 实际历史能力；旧构造入口仅用于无外部服务测试。 */
     private io.github.sjcud.stockagent.runtime.workspace.WorkspaceRepository archive;
 
@@ -70,8 +74,13 @@ public class WorkspaceController {
         value.put("researchConfigured", research.getIfAvailable() != null);
         value.put("ragConfigured", documents.getIfAvailable() != null);
         value.put("maxUploadBytes", MAX_FILE);
+        value.put("ocrAvailable", ocr != null && ocr.available());
+        value.put("incrementalAnswers", true);
         value.put(
-                "formats", Arrays.asList("pdf", "doc", "docx", "xls", "xlsx", "html", "txt", "md"));
+                "formats",
+                Arrays.asList(
+                        "pdf", "doc", "docx", "xls", "xlsx", "html", "txt", "md", "png", "jpg",
+                        "jpeg"));
         return value;
     }
 
@@ -95,8 +104,9 @@ public class WorkspaceController {
             fingerprint.append(String.format(Locale.ROOT, "%02x", b & 255));
         }
         try {
-            String revision = fingerprint.toString();
-            IngestionResult result = service.ingest("upload-" + revision, revision, content, type);
+            String revision = "pages-v1-" + fingerprint.toString();
+            IngestionResult result =
+                    service.ingest("upload-" + fingerprint.toString(), revision, content, type);
             if (result.getChunkCount() == 0) {
                 throw new IllegalArgumentException("未提取到文本");
             }
@@ -111,7 +121,14 @@ public class WorkspaceController {
             String message =
                     exception.getMessage() != null && exception.getMessage().startsWith("文档提取文本超过")
                             ? "文档提取文本超过100万字符，请拆分后上传"
-                            : "未能解析有效文本；扫描图片和OCR尚不支持";
+                            : exception.getMessage() != null
+                                            && (exception.getMessage().startsWith("OCR")
+                                                    || exception.getMessage().startsWith("PDF超过")
+                                                    || exception.getMessage().startsWith("PDF扫描页")
+                                                    || exception.getMessage().startsWith("扫描文档")
+                                                    || exception.getMessage().startsWith("原文仓储容量"))
+                                    ? exception.getMessage()
+                                    : "未能解析有效文本，请检查文档格式、加密状态和可读内容";
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, message, exception);
         } catch (RuntimeException exception) {
             throw new ResponseStatusException(
@@ -122,6 +139,8 @@ public class WorkspaceController {
     /** 根据受支持的扩展名选择现有解析器类型；不接受任意脚本或图片格式。 */
     private String contentType(String filename) {
         String name = filename.toLowerCase(Locale.ROOT);
+        if (name.endsWith(".png")) return "image/png";
+        if (name.endsWith(".jpg") || name.endsWith(".jpeg")) return "image/jpeg";
         if (name.endsWith(".pdf")) {
             return "application/pdf";
         }
@@ -147,6 +166,6 @@ public class WorkspaceController {
             return "text/plain";
         }
         throw new ResponseStatusException(
-                HttpStatus.BAD_REQUEST, "仅支持PDF、Word、Excel、HTML、TXT和Markdown");
+                HttpStatus.BAD_REQUEST, "仅支持PDF、Word、Excel、HTML、TXT、Markdown、PNG和JPEG");
     }
 }

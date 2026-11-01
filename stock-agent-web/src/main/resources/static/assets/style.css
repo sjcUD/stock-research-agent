@@ -1375,3 +1375,12 @@ svg {
     animation: none !important;
   }
 }
+
+/* 增量草稿与原文复核沿用现有浅色卡片，不改变两栏布局。 */
+.stream-draft { padding: 18px; margin: 16px 0; background: #f3fafb; border: 1px solid #d8e9ec; border-radius: 14px; }
+.stream-draft small, .ocr-notice { color: #587783; }
+.stream-draft-body { white-space: pre-wrap; overflow-wrap: anywhere; margin-top: 10px; line-height: 1.8; }
+.preview-controls { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; margin: 16px 0; }
+.document-page { white-space: pre-wrap; overflow-wrap: anywhere; font: inherit; line-height: 1.8; max-height: 55vh; overflow: auto; padding: 16px; background: #f5f8fa; border-radius: 12px; }
+.pdf-preview { width: 100%; height: 60vh; border: 1px solid #d8e9ec; border-radius: 10px; }
+.document-page mark { background: #fff0aa; }

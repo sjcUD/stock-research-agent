@@ -49,6 +49,9 @@ export async function request(path, options = {}) {
   }
 }
 export const api = {
+  document: (id, revision) => request(documentPath(id, revision)),
+  page: (id, revision, page) => request(`${documentPath(id, revision)}/pages/${page}`),
+  documentFile: (id, revision) => `${documentPath(id, revision)}/file`,
   status: () => request("/api/workspace"),
   conversations: (offset = 0) =>
     request(`/api/conversations?limit=50&offset=${offset}`),
@@ -99,5 +102,47 @@ export class TaskChannel {
       this.cancelSent = false;
       throw error;
     }
+  }
+}
+
+/** 原文只使用服务端文档ID和版本构造同源地址。 */
+function documentPath(id, revision) {
+  return `/api/rag/documents/${encodeURIComponent(id)}/revisions/${encodeURIComponent(revision)}`;
+}
+
+/** 只观察既有任务。SSE故障由调用方回退GET，绝不重发POST。 */
+export class TaskEventChannel {
+  constructor(id, onSnapshot, EventSourceClass = globalThis.EventSource, idleMs = 25000) {
+    this.source = null;
+    this.timer = null;
+    this.closed = false;
+    this.done = new Promise((resolve) => { this.resolve = resolve; });
+    const touch = () => {
+      clearTimeout(this.timer);
+      this.timer = setTimeout(() => this.close(false), idleMs);
+    };
+    try {
+      this.source = new EventSourceClass(`/api/research/tasks/${encodeURIComponent(id)}/events`);
+      this.source.addEventListener("heartbeat", touch);
+      this.source.addEventListener("snapshot", (event) => {
+        try {
+          const view = JSON.parse(event.data);
+          if (view.id !== id) throw new Error("任务不匹配");
+          touch();
+          onSnapshot(view);
+          if (!["QUEUED", "RUNNING"].includes(view.status)) this.close(true);
+        } catch { this.close(false); }
+      });
+      this.source.onerror = () => this.close(false);
+      touch();
+    } catch { this.close(false); }
+  }
+  /** 终态和取消都能释放连接，并唤醒等待方。 */
+  close(completed = false) {
+    if (this.closed) return;
+    this.closed = true;
+    clearTimeout(this.timer);
+    this.source?.close();
+    this.resolve(completed);
   }
 }

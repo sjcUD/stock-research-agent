@@ -2,14 +2,14 @@ package io.github.sjcud.stockagent.research;
 
 import io.github.sjcud.stockagent.analyst.FundamentalsAnalyst;
 import io.github.sjcud.stockagent.data.MarketSnapshot;
+import io.github.sjcud.stockagent.rag.retrieval.RetrievalAbstentionPolicy;
 import io.github.sjcud.stockagent.rag.retrieval.RetrievalHit;
 import io.github.sjcud.stockagent.rag.retrieval.RetrievalQuery;
 import io.github.sjcud.stockagent.rag.store.TimedVectorStore;
 import io.github.sjcud.stockagent.rag.store.VectorStore;
 import io.github.sjcud.stockagent.runtime.harness.BudgetLedger;
-import io.github.sjcud.stockagent.runtime.harness.HarnessCallExecutor;
 import io.github.sjcud.stockagent.runtime.harness.ContextPolicy;
-import io.github.sjcud.stockagent.rag.retrieval.RetrievalAbstentionPolicy;
+import io.github.sjcud.stockagent.runtime.harness.HarnessCallExecutor;
 
 import java.util.List;
 import java.util.function.BooleanSupplier;
@@ -31,7 +31,9 @@ public class ResearchChatService {
     }
 
     /** 创建带可选无答案拒答策略的研究服务。 */
-    public ResearchChatService(VectorStore vectorStore, FundamentalsAnalyst analyst,
+    public ResearchChatService(
+            VectorStore vectorStore,
+            FundamentalsAnalyst analyst,
             RetrievalAbstentionPolicy abstentionPolicy) {
         if (vectorStore == null || analyst == null || abstentionPolicy == null) {
             throw new IllegalArgumentException("研究编排依赖不能为空");
@@ -66,8 +68,11 @@ public class ResearchChatService {
 
     /** 带历史背景的资料问答；历史只作为可裁剪背景，当前问题和事实始终受保护。 */
     public ResearchChatAnswer ask(
-            String question, MarketSnapshot snapshot, BooleanSupplier cancelled,
-            ResearchProgressListener progress, String history) {
+            String question,
+            MarketSnapshot snapshot,
+            BooleanSupplier cancelled,
+            ResearchProgressListener progress,
+            String history) {
         progress.onProgress("RETRIEVAL", "", "STARTED");
         BudgetLedger ledger = new BudgetLedger(3, System.currentTimeMillis() + 30000L, 6000);
         List<RetrievalHit> hits;
@@ -90,18 +95,29 @@ public class ResearchChatService {
                     .append(hit.getText())
                     .append("；");
         }
-        List<ContextPolicy.Evidence> contextEvidence = new java.util.ArrayList<ContextPolicy.Evidence>();
+        List<ContextPolicy.Evidence> contextEvidence =
+                new java.util.ArrayList<ContextPolicy.Evidence>();
         for (RetrievalHit hit : hits) {
-            contextEvidence.add(new ContextPolicy.Evidence(hit.getChunkId(), hit.getText(), hit.getScore()));
+            contextEvidence.add(
+                    new ContextPolicy.Evidence(hit.getChunkId(), hit.getText(), hit.getScore()));
         }
-        String facts = "证券=" + snapshot.getSymbol() + "；收盘=" + snapshot.getClose()
-                + "；行情日=" + snapshot.getAsOf() + "；来源=" + snapshot.getSource();
+        String facts =
+                "证券="
+                        + snapshot.getSymbol()
+                        + "；收盘="
+                        + snapshot.getClose()
+                        + "；行情日="
+                        + snapshot.getAsOf()
+                        + "；来源="
+                        + snapshot.getSource();
         List<String> historyLines = new java.util.ArrayList<String>();
         if (history != null && !history.trim().isEmpty()) {
-            for (String line : history.split("\\n")) if (!line.trim().isEmpty()) historyLines.add(line);
+            for (String line : history.split("\\n"))
+                if (!line.trim().isEmpty()) historyLines.add(line);
         }
-        ContextPolicy.Prepared prepared = contextPolicy.compact("ANSWER", question, facts,
-                historyLines, contextEvidence, 6000, 2000);
+        ContextPolicy.Prepared prepared =
+                contextPolicy.compact(
+                        "ANSWER", question, facts, historyLines, contextEvidence, 6000, 2000);
         String compactEvidence = prepared.getSupplement();
         if (abstentionPolicy.shouldAbstain(hits)) {
             progress.onProgress("ANSWER", "", "STARTED");
@@ -115,7 +131,14 @@ public class ResearchChatService {
                             () -> {
                                 long started = System.nanoTime();
                                 String output =
-                                        analyst.analyze(question, snapshot, compactEvidence);
+                                        progress.wantsTextDeltas()
+                                                ? analyst.analyzeStreaming(
+                                                        question,
+                                                        snapshot,
+                                                        compactEvidence,
+                                                        progress::onTextDelta)
+                                                : analyst.analyze(
+                                                        question, snapshot, compactEvidence);
                                 progress.onTrace(
                                         new AgentTrace(
                                                 "FUNDAMENTALS",

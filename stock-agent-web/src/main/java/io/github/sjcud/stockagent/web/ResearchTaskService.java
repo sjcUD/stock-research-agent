@@ -3,9 +3,9 @@ package io.github.sjcud.stockagent.web;
 import com.fasterxml.jackson.databind.*;
 
 import io.github.sjcud.stockagent.research.AgentTrace;
-import io.github.sjcud.stockagent.research.ResearchMode;
-import io.github.sjcud.stockagent.research.ResearchEngine;
 import io.github.sjcud.stockagent.research.AnalystRole;
+import io.github.sjcud.stockagent.research.ResearchEngine;
+import io.github.sjcud.stockagent.research.ResearchMode;
 import io.github.sjcud.stockagent.research.ResearchProgressListener;
 import io.github.sjcud.stockagent.runtime.workspace.*;
 
@@ -38,6 +38,9 @@ public class ResearchTaskService implements AutoCloseable {
 
     /** 线程安全任务注册表，保留已完成结果便于短时间重新连接。 */
     private final Map<String, Task> tasks = new ConcurrentHashMap<String, Task>();
+
+    /** 连接数/队列有界，独立于模型执行线程。 */
+    private final TaskEventBroadcaster streams = new TaskEventBroadcaster();
 
     /** 统一截止与过期清理，不为每个轮询创建线程。 */
     private final ScheduledExecutorService clock = Executors.newSingleThreadScheduledExecutor();
@@ -76,7 +79,8 @@ public class ResearchTaskService implements AutoCloseable {
             for (WorkspaceRepository.Entry previous : archive.entries(input.conversationId)) {
                 history.append("用户：").append(previous.question).append('\n');
                 JsonNode snapshot = read(previous.snapshotJson);
-                if (snapshot.has("result")) history.append("助手：").append(snapshot.get("result")).append('\n');
+                if (snapshot.has("result"))
+                    history.append("助手：").append(snapshot.get("result")).append('\n');
             }
             input.historyContext = history.toString();
         }
@@ -123,16 +127,28 @@ public class ResearchTaskService implements AutoCloseable {
     }
 
     /** 从成功归档派生新任务，不覆盖原任务；空roles表示只重跑经理。 */
-    public synchronized TaskView rerun(String sourceId, List<AnalystRole> roles, ResearchMode mode) {
-        if (roles == null || mode == null || roles.size() > AnalystRole.values().length) throw new IllegalArgumentException("重跑角色或模式无效");
+    public synchronized TaskView rerun(
+            String sourceId, List<AnalystRole> roles, ResearchMode mode) {
+        if (roles == null || mode == null || roles.size() > AnalystRole.values().length)
+            throw new IllegalArgumentException("重跑角色或模式无效");
         Set<AnalystRole> selected = EnumSet.noneOf(AnalystRole.class);
-        for (AnalystRole role : roles) if (role == null || !selected.add(role)) throw new IllegalArgumentException("重跑角色重复或无效");
+        for (AnalystRole role : roles)
+            if (role == null || !selected.add(role))
+                throw new IllegalArgumentException("重跑角色重复或无效");
         get(sourceId); // 先补写活动缓存中的归档，不让未落库终态派生新任务。
         ArchivedResearchSource source = new ArchivedResearchSource(archive.get(sourceId));
-        TaskRequest request = new TaskRequest(); request.question = source.question; request.displayQuestion = roles.isEmpty() ? "仅重新汇总经理报告" : "局部重跑：" + selected;
-        request.symbol = source.symbol; request.asOf = source.asOf; request.conversationId = source.conversationId; request.scope = Scope.MARKET;
-        request.mode = mode; request.engine = ResearchEngine.ALIBABA_GRAPH; request.rerunSourceId = sourceId;
-        request.rerunRoles = new ArrayList<AnalystRole>(selected); request.historyContext = "";
+        TaskRequest request = new TaskRequest();
+        request.question = source.question;
+        request.displayQuestion = roles.isEmpty() ? "仅重新汇总经理报告" : "局部重跑：" + selected;
+        request.symbol = source.symbol;
+        request.asOf = source.asOf;
+        request.conversationId = source.conversationId;
+        request.scope = Scope.MARKET;
+        request.mode = mode;
+        request.engine = ResearchEngine.ALIBABA_GRAPH;
+        request.rerunSourceId = sourceId;
+        request.rerunRoles = new ArrayList<AnalystRole>(selected);
+        request.historyContext = "";
         return start(request);
     }
 
@@ -146,6 +162,28 @@ public class ResearchTaskService implements AutoCloseable {
             if (view.status.equals(stored.status)) return view;
         }
         return restored(stored);
+    }
+
+    /** 订阅后发送当前完整快照，重连可恢复已有草稿而不追加重复文本。 */
+    public AutoCloseable watch(String id, java.util.function.Consumer<TaskView> sink) {
+        return watch(id, sink, () -> {});
+    }
+
+    /** 在断开/关闭应用时释放Servlet异步响应，不延长应用停机。 */
+    public AutoCloseable watch(
+            String id, java.util.function.Consumer<TaskView> sink, Runnable onClose) {
+        get(id);
+        AutoCloseable handle = streams.subscribe(id, sink, onClose);
+        try {
+            streams.initial(handle, get(id));
+            return handle;
+        } catch (RuntimeException failure) {
+            try {
+                handle.close();
+            } catch (Exception ignored) {
+            }
+            throw failure;
+        }
     }
 
     /** 会话列表只含元数据，不在列表中加载全部报告。 */
@@ -213,6 +251,7 @@ public class ResearchTaskService implements AutoCloseable {
         }
         workers.shutdownNow();
         clock.shutdownNow();
+        streams.close();
         tasks.clear();
     }
 
@@ -245,7 +284,9 @@ public class ResearchTaskService implements AutoCloseable {
         private String historyContext;
 
         /** 返回当前会话的历史背景。 */
-        public String getHistoryContext() { return historyContext; }
+        public String getHistoryContext() {
+            return historyContext;
+        }
 
         /** 返回会话ID。 */
         public String getConversationId() {
@@ -284,19 +325,32 @@ public class ResearchTaskService implements AutoCloseable {
 
         /** 只由服务端派生的任务血缘；READ_ONLY防止客户端提交伪造的复用上下文。 */
         private String rerunSourceId;
+
         private List<AnalystRole> rerunRoles;
+
         /** 返回可归档的服务端来源任务。 */
-        @com.fasterxml.jackson.annotation.JsonProperty(access = com.fasterxml.jackson.annotation.JsonProperty.Access.READ_ONLY)
-        public String getRerunSourceId() { return rerunSourceId; }
+        @com.fasterxml.jackson.annotation.JsonProperty(
+                access = com.fasterxml.jackson.annotation.JsonProperty.Access.READ_ONLY)
+        public String getRerunSourceId() {
+            return rerunSourceId;
+        }
+
         /** 返回实际重跑角色，空列表表示只汇总经理。 */
-        @com.fasterxml.jackson.annotation.JsonProperty(access = com.fasterxml.jackson.annotation.JsonProperty.Access.READ_ONLY)
-        public List<AnalystRole> getRerunRoles() { return rerunRoles == null ? null : Collections.unmodifiableList(rerunRoles); }
+        @com.fasterxml.jackson.annotation.JsonProperty(
+                access = com.fasterxml.jackson.annotation.JsonProperty.Access.READ_ONLY)
+        public List<AnalystRole> getRerunRoles() {
+            return rerunRoles == null ? null : Collections.unmodifiableList(rerunRoles);
+        }
 
         /** 返回引擎，将随请求JSON归档。 */
-        public ResearchEngine getEngine() { return engine; }
+        public ResearchEngine getEngine() {
+            return engine;
+        }
 
         /** 设置引擎，控制器负责校验资料问答不支持Graph。 */
-        public void setEngine(ResearchEngine engine) { this.engine = engine; }
+        public void setEngine(ResearchEngine engine) {
+            this.engine = engine;
+        }
 
         /** 返回问题。 */
         public String getQuestion() {
@@ -357,7 +411,8 @@ public class ResearchTaskService implements AutoCloseable {
             value.scope = scope;
             value.mode = mode;
             value.engine = engine;
-            value.rerunSourceId = rerunSourceId; value.rerunRoles = rerunRoles == null ? null : new ArrayList<AnalystRole>(rerunRoles);
+            value.rerunSourceId = rerunSourceId;
+            value.rerunRoles = rerunRoles == null ? null : new ArrayList<AnalystRole>(rerunRoles);
             value.conversationId = conversationId;
             value.displayQuestion = displayQuestion;
             value.historyContext = historyContext;
@@ -424,6 +479,11 @@ public class ResearchTaskService implements AutoCloseable {
         /** 新旧任务血缘在运行中/失败/取消时也可查询，不依赖成功result。 */
         private final String sourceTaskId;
 
+        /** 单调快照版本与尚未完成的模型正文，不能当作成功result。 */
+        private final long version;
+
+        private final String draftAnswer;
+
         /** 任务状态。 */
         private final String status;
 
@@ -447,6 +507,8 @@ public class ResearchTaskService implements AutoCloseable {
             id = task.id;
             conversationId = task.input.conversationId;
             sourceTaskId = task.input.rerunSourceId;
+            version = task.version;
+            draftAnswer = task.draft.toString();
             status = task.status;
             phase = task.phase;
             error = task.error;
@@ -460,6 +522,8 @@ public class ResearchTaskService implements AutoCloseable {
             id = entry.id;
             conversationId = entry.conversationId;
             sourceTaskId = snapshot.path("sourceTaskId").asText(null);
+            version = snapshot.path("version").asLong(0);
+            draftAnswer = snapshot.path("draftAnswer").asText("");
             status = entry.status;
             phase = snapshot.path("phase").asText("QUEUE");
             error =
@@ -487,8 +551,20 @@ public class ResearchTaskService implements AutoCloseable {
             traces = Collections.unmodifiableList(restored);
         }
 
+        /** SSE和轮询共用版本，浏览器拒绝旧版本倒退。 */
+        public long getVersion() {
+            return version;
+        }
+
+        /** 返回真实增量草稿；终态失败时仍明确为未完成文本。 */
+        public String getDraftAnswer() {
+            return draftAnswer;
+        }
+
         /** 返回来源任务；普通新研究为null。 */
-        public String getSourceTaskId() { return sourceTaskId; }
+        public String getSourceTaskId() {
+            return sourceTaskId;
+        }
 
         /** 返回完整已完成角色轨迹；不代表未完成角色产生过模型输出。 */
         public List<AgentTrace> getTraces() {
@@ -562,12 +638,15 @@ public class ResearchTaskService implements AutoCloseable {
             try {
                 boolean saved = archive.save(entry(), assistantText());
                 dirty = false;
+                if (saved) streams.publish(view());
                 return saved;
             } catch (RuntimeException ex) {
                 status = "FAILED";
                 error = "历史记录保存失败，本次研究已停止。模型可能已调用，请核对后再决定是否重试。";
                 result = null;
                 dirty = true;
+                version++;
+                streams.publish(view());
                 return false;
             }
         }
@@ -619,6 +698,11 @@ public class ResearchTaskService implements AutoCloseable {
         /** 成功响应，取消时不保留迟到正文。 */
         private Object result;
 
+        /** 草稿有界，版本在每次实际更新时递增；归档由既有1秒补写与终态事务完成。 */
+        private final StringBuilder draft = new StringBuilder();
+
+        private long version, lastDraftEmission;
+
         /** 有界事件集合，当前阶段数量远小于64。 */
         private final List<ProgressEvent> events = new ArrayList<ProgressEvent>();
 
@@ -632,6 +716,14 @@ public class ResearchTaskService implements AutoCloseable {
                     progress(phase, role, status);
                 }
 
+                public boolean wantsTextDeltas() {
+                    return true;
+                }
+
+                public void onTextDelta(String text) {
+                    appendDraft(text);
+                }
+
                 public void onTrace(AgentTrace trace) {
                     recordTrace(trace);
                 }
@@ -643,7 +735,25 @@ public class ResearchTaskService implements AutoCloseable {
             if (terminal() || trace == null) return;
             if (traces.size() < 8) traces.add(trace);
             updatedAt = System.currentTimeMillis();
+            version++;
             if (!publish()) throw new WorkspaceStorageException(null);
+        }
+
+        /** 模型线程只追加文本和投递最新快照，网络慢连接不会阻塞收费执行。 */
+        private synchronized void appendDraft(String text) {
+            if (terminal() || text == null || text.isEmpty()) return;
+            if ((long) draft.length() + text.length() > 200000)
+                throw new IllegalStateException("回答超过草稿上限");
+            draft.append(text);
+            version++;
+            updatedAt = System.currentTimeMillis();
+            dirty = true;
+            long now = System.nanoTime();
+            if (now - lastDraftEmission
+                    >= java.util.concurrent.TimeUnit.MILLISECONDS.toNanos(200)) {
+                lastDraftEmission = now;
+                streams.publish(view());
+            }
         }
 
         /** 与执行器关联的取消句柄。 */
@@ -661,6 +771,7 @@ public class ResearchTaskService implements AutoCloseable {
             }
             status = "RUNNING";
             updatedAt = System.currentTimeMillis();
+            version++;
             return publish();
         }
 
@@ -682,6 +793,7 @@ public class ResearchTaskService implements AutoCloseable {
                 events.add(new ProgressEvent(phase, role, state));
             }
             updatedAt = System.currentTimeMillis();
+            version++;
             if (!publish()) throw new WorkspaceStorageException(null);
         }
 
@@ -693,6 +805,7 @@ public class ResearchTaskService implements AutoCloseable {
             result = value;
             status = "COMPLETED";
             updatedAt = System.currentTimeMillis();
+            version++;
             publish();
         }
 
@@ -707,6 +820,7 @@ public class ResearchTaskService implements AutoCloseable {
                             ? "代码、日期或问题无效，请检查后重试。"
                             : "本次研究未完成，请检查数据或模型服务后重试。";
             updatedAt = System.currentTimeMillis();
+            version++;
             publish();
         }
 
@@ -723,6 +837,7 @@ public class ResearchTaskService implements AutoCloseable {
                                     ? "服务已重启，本次研究中断；请确认后重新发起。"
                                     : "REJECTED".equals(value) ? "研究队列已满，本次未执行。" : "";
             updatedAt = System.currentTimeMillis();
+            version++;
             publish();
             if (future != null) {
                 future.cancel(true);
