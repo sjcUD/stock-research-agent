@@ -5,6 +5,8 @@ import io.github.sjcud.stockagent.rag.chunking.FixedWindowChunkingStrategy;
 import io.github.sjcud.stockagent.rag.parser.DocumentParser;
 import io.github.sjcud.stockagent.rag.parser.TikaDocumentParser;
 import io.github.sjcud.stockagent.rag.store.VectorStore;
+import io.github.sjcud.stockagent.rag.store.ThresholdRerankingVectorStore;
+import io.github.sjcud.stockagent.rag.retrieval.ScoreRetrievalReranker;
 import io.github.sjcud.stockagent.rag.store.qdrant.QdrantVectorStore;
 import io.qdrant.client.QdrantClient;
 import io.qdrant.client.QdrantGrpcClient;
@@ -57,8 +59,10 @@ public class QdrantProviderConfiguration {
 
     /** 将供应商无关的 VectorStore 暴露给 RAG 应用服务。 */
     @Bean
-    public VectorStore vectorStore(org.springframework.ai.vectorstore.qdrant.QdrantVectorStore delegate) {
-        return new QdrantVectorStore(delegate);
+    public VectorStore vectorStore(org.springframework.ai.vectorstore.qdrant.QdrantVectorStore delegate,
+            @Value("${stock.agent.rag.search.minimum-score:0.0}") double minimumScore) {
+        return new ThresholdRerankingVectorStore(new QdrantVectorStore(delegate), minimumScore,
+                new ScoreRetrievalReranker());
     }
 
     /** 装配支持 PDF、Office、HTML 与文本的现有 Tika 解析器。 */

@@ -112,7 +112,7 @@ QDRANT_INTEGRATION=true mvn -pl stock-agent-rag -am \
 
 模型 Base URL 和路径兼容配置参见 [TROUBLESHOOTING.md](TROUBLESHOOTING.md)。DashScope Embedding 保留完整 `/compatible-mode/v1` Base URL，并显式设置 `embeddingsPath("/embeddings")`。
 
-P11 已增加固定合成数据集、检索参数对比、回答规则和工具调度契约评测；运行方式和学习入口见 [评测模块说明](stock-agent-evaluation/README.md)。P12本地运行与部署、P6会话归档和P7 Harness 完整运行时已完成。下一步优先扩充困难语料、无答案拒答和语义忠实度评测。前端沿用已确定的浅色聊天交互设计。
+P11 已增加固定合成数据集、检索参数对比、回答规则和工具调度契约评测；运行方式和学习入口见 [评测模块说明](stock-agent-evaluation/README.md)。P12本地运行与部署、P6会话归档和P7 Harness 完整运行时已完成。下一步继续扩充困难语料、人工盲评和语义忠实度评测；生产检索已支持可配置最低分和可替换重排器。前端沿用已确定的浅色聊天交互设计。
 
 ## P9 市场数据与研究
 
@@ -180,6 +180,8 @@ P9 对应的 Agent 学习点是：工具/数据提供器边界、确定性计算
 - 可停止后台研究、重新连接同一个任务ID、明确重试，或下载Markdown报告。POST不自动重试；轮询断开不会偷偷创建新的收费任务。取消发送中断信号并禁止发布迟到结果，底层SDK是否立即退出仍取决于其实现。
 
 MySQL模式会话从服务端恢复，浏览器仅缓存最近8个会话、每个最近10轮；旧浏览器记录保留并可本地导出，MySQL缓存不覆盖它们，不自动导入。未启用MySQL时为显式进程内归档。最多2个研究同时运行、8个排队、100个执行对象缓存，创建后3分钟截止、终态缓存20分钟；MySQL历史独立保留，重启后未完成任务标记INTERRUPTED，不自动续跑。当前使用轮询进度，不是逐Token流式生成。详见[会话与任务归档说明](PERSISTENCE.md)。
+
+RAG 检索默认使用 `STOCK_AGENT_RAG_SEARCH_MINIMUM_SCORE=0.0`，先过滤低于阈值的命中，再按分数和稳定片段ID重排；设置更高阈值可减少无答案噪声，但应先用 P11 评测确认召回损失。重排器通过 `RetrievalReranker` 接口替换，当前实现不修改引用正文。
 
 文档单文件上限10MiB，文本提取最多100万字符，超过明确拒绝并提示拆分；不静默只索引前10万字符。支持PDF、Word、Excel、HTML、TXT、Markdown，扫描图片/OCR和精确页码定位尚未完成。Tika已更新至3.3.3并验证PDF、DOCX、XLSX及长文本；原JSON入库与同步研究API继续保留。
 
