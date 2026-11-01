@@ -26,16 +26,22 @@ public class LiveStockDataProvider implements StockDataProvider {
     private final Clock clock;
     /** 只缓存完整 point-in-time 结果，避免同一研究日重复请求供应商。 */
     private final PointInTimeDataCache cache;
+    /** 可选公告全文策略；默认不下载正文，列表状态仍然保留。 */
+    private final AnnouncementTextProvider announcementTextProvider;
     /** JSON 解析器在构造后不修改配置，允许并发读取。 */
     private final ObjectMapper json = new ObjectMapper();
     /** 注入网络适配器与时钟。 */
     public LiveStockDataProvider(HttpTextClient client, Clock clock) {
-        this(client, clock, new PointInTimeDataCache(64, java.time.Duration.ofMinutes(5), clock));
+        this(client, clock, new PointInTimeDataCache(64, java.time.Duration.ofMinutes(5), clock), article -> new AnnouncementTextProvider.FullText("", DataStatus.UNAVAILABLE));
     }
     /** 注入缓存策略，测试可使用短TTL或禁用式单条缓存。 */
     public LiveStockDataProvider(HttpTextClient client, Clock clock, PointInTimeDataCache cache) {
-        if (client == null || clock == null || cache == null) { throw new IllegalArgumentException("取数依赖不能为空"); }
-        this.client = client; this.clock = clock.withZone(ZoneId.of("Asia/Shanghai")); this.cache = cache;
+        this(client, clock, cache, article -> new AnnouncementTextProvider.FullText("", DataStatus.UNAVAILABLE));
+    }
+    /** 注入公告全文适配器，列表和全文可以独立降级。 */
+    public LiveStockDataProvider(HttpTextClient client, Clock clock, PointInTimeDataCache cache, AnnouncementTextProvider textProvider) {
+        if (client == null || clock == null || cache == null || textProvider == null) { throw new IllegalArgumentException("取数依赖不能为空"); }
+        this.client = client; this.clock = clock.withZone(ZoneId.of("Asia/Shanghai")); this.cache = cache; this.announcementTextProvider = textProvider;
     }
     /** 加载按日终截止的数据；核心行情失败中止，辅助资讯失败显式降级。 */
     @Override public StockResearchData load(String symbol, String asOf) {
@@ -166,9 +172,14 @@ public class LiveStockDataProvider implements StockDataProvider {
                 }
                 String publishedAt = announcement ? date.toString() :
                         LocalDateTime.parse(dateText, DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")) + "+08:00";
-                items.add(new MarketArticle(id, clean(required(row,"title"),300),
+                MarketArticle item = new MarketArticle(id, clean(required(row,"title"),300),
                         clean(row.path("content").asText(""),1500), publishedAt, link,
-                        announcement ? "东方财富公告列表" : clean(row.path("mediaName").asText("未知媒体"),100)));
+                        announcement ? "东方财富公告列表" : clean(row.path("mediaName").asText("未知媒体"),100));
+                if (announcement) {
+                    AnnouncementTextProvider.FullText full = announcementTextProvider.fetch(item);
+                    item = new MarketArticle(id, item.getTitle(), item.getSummary(), item.getPublishedAt(), item.getUrl(), item.getPublisher(), full.getText(), full.getStatus());
+                }
+                items.add(item);
             }
             return feed(source, raw, true,
                     announcement ? "RECENT_20_ONLY;NOTICE_DATE_DAY_PRECISION;NO_FULL_TEXT" : "KEYWORD_SEARCH_RECENT_10_ONLY;NOT_COMPLETE_HISTORY",

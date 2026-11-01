@@ -26,21 +26,33 @@ public final class StockResearchData {
     private final PriceAdjustmentMode adjustmentMode;
     /** 从价格序列推导的公司行为因子，可能为空。 */
     private final List<CorporateAction> corporateActions;
+    /** 按披露日过滤的财报数据，可能明确不可用。 */
+    private final DataFeed<FinancialStatement> financials;
+    /** 按研究日过滤的情绪快照，可能明确不可用。 */
+    private final DataFeed<SentimentSnapshot> sentiment;
     /** 创建不可变的取数结果。 */
     public StockResearchData(String requestedAsOf, DataMode mode, MarketSnapshot snapshot,
             DataFeed<DailyBar> history, DataFeed<MarketArticle> news, DataFeed<MarketArticle> announcements,
             Map<String, BigDecimal> indicators) {
         this(requestedAsOf, mode, snapshot, history, news, announcements, indicators,
-                PriceAdjustmentMode.UNADJUSTED, Collections.<CorporateAction>emptyList());
+                PriceAdjustmentMode.UNADJUSTED, Collections.<CorporateAction>emptyList(), unavailableFinancials(), unavailableSentiment());
     }
     /** 创建包含复权口径和公司行为的完整市场结果。 */
     public StockResearchData(String requestedAsOf, DataMode mode, MarketSnapshot snapshot,
             DataFeed<DailyBar> history, DataFeed<MarketArticle> news, DataFeed<MarketArticle> announcements,
             Map<String, BigDecimal> indicators, PriceAdjustmentMode adjustmentMode, List<CorporateAction> actions) {
+        this(requestedAsOf, mode, snapshot, history, news, announcements, indicators, adjustmentMode, actions, unavailableFinancials(), unavailableSentiment());
+    }
+    /** 创建包含财报与情绪数据的完整结果。 */
+    public StockResearchData(String requestedAsOf, DataMode mode, MarketSnapshot snapshot,
+            DataFeed<DailyBar> history, DataFeed<MarketArticle> news, DataFeed<MarketArticle> announcements,
+            Map<String, BigDecimal> indicators, PriceAdjustmentMode adjustmentMode, List<CorporateAction> actions,
+            DataFeed<FinancialStatement> financials, DataFeed<SentimentSnapshot> sentiment) {
         this.requestedAsOf = requestedAsOf; this.mode = mode; this.snapshot = snapshot; this.history = history;
         this.news = news; this.announcements = announcements; this.indicators = Collections.unmodifiableMap(new LinkedHashMap<String, BigDecimal>(indicators));
         this.adjustmentMode = adjustmentMode == null ? PriceAdjustmentMode.UNADJUSTED : adjustmentMode;
         this.corporateActions = Collections.unmodifiableList(new java.util.ArrayList<CorporateAction>(actions));
+        this.financials = financials; this.sentiment = sentiment;
     }
     /** 返回请求截止日。 */
     public String getRequestedAsOf() { return requestedAsOf; }
@@ -60,4 +72,8 @@ public final class StockResearchData {
     public PriceAdjustmentMode getAdjustmentMode() { return adjustmentMode; }
     /** 返回公司行为因子列表。 */
     public List<CorporateAction> getCorporateActions() { return corporateActions; }
+    public DataFeed<FinancialStatement> getFinancials() { return financials; }
+    public DataFeed<SentimentSnapshot> getSentiment() { return sentiment; }
+    private static DataFeed<FinancialStatement> unavailableFinancials() { return new DataFeed<FinancialStatement>("UNCONFIGURED", "", "", DataStatus.UNAVAILABLE, true, "FINANCIAL_STATEMENTS_NOT_CONFIGURED", Collections.<FinancialStatement>emptyList()); }
+    private static DataFeed<SentimentSnapshot> unavailableSentiment() { return new DataFeed<SentimentSnapshot>("UNCONFIGURED", "", "", DataStatus.UNAVAILABLE, true, "SOCIAL_SENTIMENT_NOT_CONFIGURED", Collections.<SentimentSnapshot>emptyList()); }
 }

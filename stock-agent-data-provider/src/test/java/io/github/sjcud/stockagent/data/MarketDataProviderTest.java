@@ -97,4 +97,13 @@ public class MarketDataProviderTest {
         assertEquals(1, cache.size());
     }
 
+    @Test
+    public void announcementFullTextIsOptionalAndSanitized() {
+        EastmoneyAnnouncementTextProvider full = new EastmoneyAnnouncementTextProvider(url -> "<html><script>x</script><body>公告正文&nbsp;  收入</body></html>", 1000);
+        MarketArticle article = new MarketArticle("a", "标题", "摘要", "2026-10-30", "https://example.com/a", "公告");
+        AnnouncementTextProvider.FullText result = full.fetch(article);
+        assertEquals(DataStatus.AVAILABLE, result.getStatus());
+        assertFalse(result.getText().contains("<script>")); assertTrue(result.getText().contains("公告正文"));
+    }
+
 }

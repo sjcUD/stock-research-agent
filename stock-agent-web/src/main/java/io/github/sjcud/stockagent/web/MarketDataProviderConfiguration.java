@@ -13,7 +13,7 @@ import org.springframework.context.annotation.Configuration;
 public class MarketDataProviderConfiguration {
     /** 兼容嵌入式测试和旧调用方，使用默认有界缓存。 */
     public StockDataProvider stockDataProvider(String mode, int connectTimeout, int readTimeout, int perMinute) {
-        return stockDataProvider(mode, connectTimeout, readTimeout, perMinute, 64, 300L);
+        return stockDataProvider(mode, connectTimeout, readTimeout, perMinute, 64, 300L, false);
     }
 
     /** 默认 SAMPLE；LIVE 失败不回退样例。每分钟频率由一个共享装饰器约束。 */
@@ -24,12 +24,15 @@ public class MarketDataProviderConfiguration {
             @Value("${stock.agent.data.read-timeout-ms:5000}") int readTimeout,
             @Value("${stock.agent.data.requests-per-minute:60}") int perMinute,
             @Value("${stock.agent.data.cache-entries:64}") int cacheEntries,
-            @Value("${stock.agent.data.cache-ttl-seconds:300}") long cacheTtlSeconds) {
+            @Value("${stock.agent.data.cache-ttl-seconds:300}") long cacheTtlSeconds,
+            @Value("${stock.agent.data.announcements.full-text:false}") boolean fullText) {
         DataMode selected = DataMode.valueOf(mode.trim().toUpperCase(Locale.ROOT));
         if (selected == DataMode.SAMPLE) { return new SampleStockProvider(); }
         Clock clock = Clock.systemUTC();
-        return new LiveStockDataProvider(new RateLimitedHttpClient(
-                new ApacheHttpTextClient(connectTimeout,readTimeout,1048576),perMinute,1500), clock,
-                new PointInTimeDataCache(cacheEntries, Duration.ofSeconds(cacheTtlSeconds), clock));
+        ApacheHttpTextClient rawClient = new ApacheHttpTextClient(connectTimeout, readTimeout, 1048576);
+        RateLimitedHttpClient client = new RateLimitedHttpClient(rawClient, perMinute, 1500);
+        return new LiveStockDataProvider(client, clock, new PointInTimeDataCache(cacheEntries, Duration.ofSeconds(cacheTtlSeconds), clock),
+                fullText ? new EastmoneyAnnouncementTextProvider(client, 50000)
+                        : article -> new AnnouncementTextProvider.FullText("", DataStatus.UNAVAILABLE));
     }
 }

@@ -256,3 +256,6 @@ RAG 文档默认归档到 `data/documents`。PDF 按实体页解析并保留空�
 市场数据接口支持 `adjustment=UNADJUSTED|FORWARD_ADJUSTED|BACKWARD_ADJUSTED`，研究请求也可指定复权口径。LIVE 提供器通过腾讯日线接口读取对应序列；成交量在进入领域模型前统一为 `SHARES`。复权与未复权序列按交易日比较，只有价格比值发生突变时才记录公司行为因子，并标记为“类型待核验”，不会把价格跳变擅自解释成分红或送转。
 
 LIVE 结果使用证券代码、研究截止日和复权口径作为 point-in-time 缓存键，缓存有界且带 TTL，避免不同研究日相互污染。资讯仍是最近窗口；财报全文、公告全文和社交情绪数据保持明确未接入状态。
+
+
+P9 剩余数据源边界：`FinancialStatement` 和 `SentimentSnapshot` 已加入领域契约，结果包含 `UNAVAILABLE` 状态和原因，只有披露日不晚于研究日的数据才允许进入上下文。公告全文通过 `STOCK_AGENT_DATA_ANNOUNCEMENTS_FULL_TEXT=true` 开启，默认关闭；全文会被净化为纯文本并限制长度，列表失败与全文失败分别记录。真实财报和社交情绪供应商仍需按项目实际授权接入。

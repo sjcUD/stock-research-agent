@@ -14,10 +14,18 @@ public final class MarketArticle {
     private final String url;
     /** 原发布媒体或公告平台。 */
     private final String publisher;
+    /** 公告全文，未抓取时为空；摘要不能冒充全文。 */
+    private final String fullText;
+    /** 全文抓取状态。 */
+    private final DataStatus fullTextStatus;
     /** 创建不可变资讯条目。 */
     public MarketArticle(String id, String title, String summary, String publishedAt, String url, String publisher) {
-        this.id = id; this.title = title; this.summary = summary;
-        this.publishedAt = publishedAt; this.url = url; this.publisher = publisher;
+        this(id,title,summary,publishedAt,url,publisher,"",DataStatus.UNAVAILABLE);
+    }
+    /** 创建带全文状态的资讯条目。 */
+    public MarketArticle(String id, String title, String summary, String publishedAt, String url, String publisher, String fullText, DataStatus fullTextStatus) {
+        this.id = id; this.title = title; this.summary = summary; this.publishedAt = publishedAt; this.url = url; this.publisher = publisher;
+        this.fullText = fullText == null ? "" : fullText; this.fullTextStatus = fullTextStatus == null ? DataStatus.UNAVAILABLE : fullTextStatus;
     }
     /** 返回 ID。 */
     public String getId() { return id; }
@@ -31,4 +39,8 @@ public final class MarketArticle {
     public String getUrl() { return url; }
     /** 返回原发布方。 */
     public String getPublisher() { return publisher; }
+    /** 返回公告全文；为空时必须查看全文状态。 */
+    public String getFullText() { return fullText; }
+    /** 返回全文抓取状态。 */
+    public DataStatus getFullTextStatus() { return fullTextStatus; }
 }
