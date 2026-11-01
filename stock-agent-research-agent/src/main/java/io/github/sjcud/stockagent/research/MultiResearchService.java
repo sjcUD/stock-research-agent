@@ -126,8 +126,13 @@ public class MultiResearchService {
         ContextPolicy.Prepared prepared = contextPolicy.compact("ANALYSTS", question, facts,
                 historyLines, contextEvidence, 20000, 4000);
         String compactEvidence = prepared.getSupplement();
+        // 分析师和经理各自拥有硬上限，同时通过父账本共享整次请求的全局额度。
+        BudgetLedger analystBudget = ledger.child("ANALYSTS", modelCalls - 1,
+                45000, Math.min(110000L, ledger.remainingMillis()));
+        BudgetLedger managerBudget = ledger.child("MANAGER", 1, 15000,
+                Math.min(30000L, ledger.remainingMillis()));
         List<AnalystResult> results =
-                orchestrator.run(question, snapshot, compactEvidence, mode, ledger, progress);
+                orchestrator.run(question, snapshot, compactEvidence, mode, analystBudget, progress);
         // 汇总也使用 Future 的剩余时限，避免分析师完成后经理无限等待。
         ExecutorService pool = Executors.newSingleThreadExecutor();
         Future<PortfolioDecision> future = null;
@@ -153,13 +158,13 @@ public class MultiResearchService {
                                                                 "COMPLETED");
                                                         return decision;
                                                     },
-                                                    ledger,
+                                                    managerBudget,
                                                     1,
                                                     0L,
                                                     () -> Thread.currentThread().isInterrupted(),
                                                     tokens));
             return new MultiResearchAnswer(
-                    mode, future.get(ledger.remainingMillis(), TimeUnit.MILLISECONDS), hits,
+                    mode, future.get(Math.min(ledger.remainingMillis(), managerBudget.remainingMillis()), TimeUnit.MILLISECONDS), hits,
                     prepared.getReport());
         } finally {
             if (future != null) {
