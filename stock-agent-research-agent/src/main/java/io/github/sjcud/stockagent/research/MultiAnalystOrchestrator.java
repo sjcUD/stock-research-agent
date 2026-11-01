@@ -147,7 +147,19 @@ public class MultiAnalystOrchestrator {
         if (future == null) {
             throw new TimeoutException("分析师执行超过研究截止时间");
         }
-        return future.get();
+        try {
+            return future.get();
+        } catch (ExecutionException exception) {
+            // Future 会包装阶段截止异常；对编排层统一暴露 TimeoutException，保持旧 API 语义。
+            Throwable cause = exception.getCause();
+            if (cause instanceof io.github.sjcud.stockagent.runtime.harness.HarnessTimeoutException
+                    || cause instanceof TimeoutException) {
+                TimeoutException timeout = new TimeoutException(cause.getMessage());
+                timeout.initCause(cause);
+                throw timeout;
+            }
+            throw exception;
+        }
     }
 
     /** 保守估算字符输入加输出预留；不是模型账单中的真实 usage。 */
