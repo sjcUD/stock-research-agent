@@ -71,6 +71,7 @@ public final class EvaluationSuite {
     /** 执行带相似度下限的评测；阈值写入行结果，避免报告无法复现。 */
     public Map<String, Object> evaluate(
             VectorStore store, String model, int dimensions, int chunk, int topK, double threshold) {
+        if (Double.isNaN(threshold)) throw new IllegalArgumentException("阈值不能为NaN");
         Map<String, Object> row = new LinkedHashMap<String, Object>();
         row.put("model", model);
         row.put("dimensions", dimensions);
@@ -78,15 +79,20 @@ public final class EvaluationSuite {
         row.put("topK", topK);
         if (threshold != Double.NEGATIVE_INFINITY) row.put("similarityThreshold", threshold);
         List<Map<String, Object>> cases = new ArrayList<Map<String, Object>>();
-        double recall = 0, hit = 0, mrr = 0, fp = 0;
+        double recall = 0, hit = 0, mrr = 0, fp = 0, evidenceRecall = 0;
+        int annotatedQueries = 0;
         int positives = 0, negatives = 0, total = 0, valid = 0, errors = 0;
         RagEvaluator evaluator = new RagEvaluator(dataset);
+        EvaluationStatistics timing = new EvaluationStatistics();
         for (EvaluationDataset.Question q : dataset.getQuestions()) {
             Map<String, Object> detail = new LinkedHashMap<String, Object>();
             detail.put("id", q.getId());
             boolean positive = !q.getRelevant().isEmpty();
             if (positive) positives++;
             else negatives++;
+            if (!q.getEvidence().isEmpty()) annotatedQueries++;
+            long started = System.nanoTime();
+            boolean succeeded = false;
             try {
                 List<RetrievalHit> hits = store.search(new RetrievalQuery(q.getText(), topK));
                 RagEvaluator.Score s = evaluator.score(q, hits, threshold);
@@ -95,29 +101,38 @@ public final class EvaluationSuite {
                     hit += s.hit;
                     mrr += s.reciprocalRank;
                 } else fp += s.falsePositive;
+                if (s.evidenceRecall != null) evidenceRecall += s.evidenceRecall;
                 valid += s.validCitations;
                 total += s.totalHits;
+                succeeded = true;
                 detail.put("status", "OK");
                 detail.put("score", s);
-                detail.put("hits", hits);
+                List<RetrievalHit> accepted = new ArrayList<RetrievalHit>();
+                for (RetrievalHit h : hits) if (h != null && h.getScore() >= threshold) accepted.add(h);
+                detail.put("rawHits", hits); detail.put("hits", accepted);
             } catch (RuntimeException ex) {
                 errors++;
                 detail.put("status", "ERROR");
                 detail.put("errorType", ex.getClass().getSimpleName());
                 // 不记录异常消息：供应商消息可能包含地址、请求体或敏感信息。
                 if (!positive) fp++;
+            } finally {
+                double millis = (System.nanoTime() - started) / 1000000.0;
+                timing.record(millis, succeeded); detail.put("latencyMillis", millis);
             }
             cases.add(detail);
         }
         row.put("recallAtK", positives == 0 ? null : recall / positives);
         row.put("hitAtK", positives == 0 ? null : hit / positives);
         row.put("mrr", positives == 0 ? null : mrr / positives);
+        row.put("evidenceRecallAtK", annotatedQueries == 0 ? null : evidenceRecall / annotatedQueries);
         row.put("negativeAnyHitRate", negatives == 0 ? null : fp / negatives);
         row.put("citationCoverage", total == 0 ? null : (double) valid / total);
         row.put("errors", errors);
         row.put("positiveQueries", positives);
         row.put("negativeQueries", negatives);
         row.put("cases", cases);
+        row.put("executionStatistics", timing.snapshot());
         return row;
     }
 
@@ -230,8 +245,8 @@ public final class EvaluationSuite {
         md.append(report.get("limitations"))
                 .append(
                         "\n\n"
-                                + "|模型|维度|chunk|topK|Recall|Hit|MRR|Citation|无答案任意命中率|错误|\n"
-                                + "|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|\n");
+                                + "|模型|维度|chunk|topK|阈值|Recall|Hit|MRR|Citation|无答案任意命中率|错误|\n"
+                                + "|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|\n");
         for (Map<String, Object> row : rows) {
             md.append('|');
             for (String key :
@@ -240,6 +255,7 @@ public final class EvaluationSuite {
                         "dimensions",
                         "chunkSize",
                         "topK",
+                        "similarityThreshold",
                         "recallAtK",
                         "hitAtK",
                         "mrr",

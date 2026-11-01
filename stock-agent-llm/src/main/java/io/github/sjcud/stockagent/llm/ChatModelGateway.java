@@ -15,4 +15,9 @@ public interface ChatModelGateway {
      * @return 模型回答文本
      */
     String chat(String prompt);
+
+    /** 可选usage能力；保留lambda网关兼容，不支持时返回null计数。 */
+    default ChatCompletion complete(String prompt) {
+        return new ChatCompletion(chat(prompt), null, null);
+    }
 }

@@ -9,6 +9,7 @@ import io.github.sjcud.stockagent.rag.store.VectorStore;
 import io.github.sjcud.stockagent.runtime.harness.BudgetLedger;
 import io.github.sjcud.stockagent.runtime.harness.HarnessCallExecutor;
 import io.github.sjcud.stockagent.runtime.harness.ContextPolicy;
+import io.github.sjcud.stockagent.rag.retrieval.RetrievalAbstentionPolicy;
 
 import java.util.List;
 import java.util.function.BooleanSupplier;
@@ -23,13 +24,21 @@ public class ResearchChatService {
     private final FundamentalsAnalyst analyst;
     private final HarnessCallExecutor executor;
     private final ContextPolicy contextPolicy = new ContextPolicy();
+    private final RetrievalAbstentionPolicy abstentionPolicy;
 
     public ResearchChatService(VectorStore vectorStore, FundamentalsAnalyst analyst) {
-        if (vectorStore == null || analyst == null) {
+        this(vectorStore, analyst, new RetrievalAbstentionPolicy(false, 1));
+    }
+
+    /** 创建带可选无答案拒答策略的研究服务。 */
+    public ResearchChatService(VectorStore vectorStore, FundamentalsAnalyst analyst,
+            RetrievalAbstentionPolicy abstentionPolicy) {
+        if (vectorStore == null || analyst == null || abstentionPolicy == null) {
             throw new IllegalArgumentException("研究编排依赖不能为空");
         }
         this.vectorStore = vectorStore;
         this.analyst = analyst;
+        this.abstentionPolicy = abstentionPolicy;
         this.executor =
                 new HarnessCallExecutor(
                         new io.github.sjcud.stockagent.runtime.harness.FailureClassifier());
@@ -94,6 +103,11 @@ public class ResearchChatService {
         ContextPolicy.Prepared prepared = contextPolicy.compact("ANSWER", question, facts,
                 historyLines, contextEvidence, 6000, 2000);
         String compactEvidence = prepared.getSupplement();
+        if (abstentionPolicy.shouldAbstain(hits)) {
+            progress.onProgress("ANSWER", "", "STARTED");
+            progress.onProgress("ANSWER", "", "COMPLETED");
+            return new ResearchChatAnswer(abstentionPolicy.message(), hits, prepared.getReport());
+        }
         try {
             progress.onProgress("ANSWER", "", "STARTED");
             String answer =

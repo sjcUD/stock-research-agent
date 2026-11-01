@@ -16,7 +16,10 @@ public class SpringAiChatModelGateway implements ChatModelGateway {
 
     /** 调用模型并返回回答正文。 */
     @Override
-    public String chat(String prompt) {
+    public String chat(String prompt) { return complete(prompt).getText(); }
+
+    /** 保留Spring AI供应商元数据，不读取或记录密钥和原始HTTP响应。 */
+    @Override public ChatCompletion complete(String prompt) {
         if (prompt == null || prompt.trim().isEmpty()) {
             throw new IllegalArgumentException("prompt 不能为空");
         }
@@ -26,6 +29,10 @@ public class SpringAiChatModelGateway implements ChatModelGateway {
                 || response.getResult().getOutput().getText() == null) {
             throw new IllegalStateException("模型未返回回答正文");
         }
-        return response.getResult().getOutput().getText();
+        org.springframework.ai.chat.metadata.Usage usage = response.getMetadata() == null ? null : response.getMetadata().getUsage();
+        // EmptyUsage不表示免费调用，不能把缺失usage记成0。
+        boolean known = usage != null && !(usage instanceof org.springframework.ai.chat.metadata.EmptyUsage);
+        return new ChatCompletion(response.getResult().getOutput().getText(),
+                known ? usage.getPromptTokens() : null, known ? usage.getCompletionTokens() : null);
     }
 }

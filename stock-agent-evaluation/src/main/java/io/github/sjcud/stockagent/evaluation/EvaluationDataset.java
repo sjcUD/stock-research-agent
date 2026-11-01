@@ -4,6 +4,8 @@ import com.fasterxml.jackson.databind.*;
 
 import java.io.*;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Path;
+import java.nio.file.Files;
 import java.security.MessageDigest;
 import java.util.*;
 
@@ -32,22 +34,31 @@ public final class EvaluationDataset {
 
     /** 从指定版本资源加载困难语料，资源必须随代码版本控制。 */
     public static EvaluationDataset load(String resource) throws Exception {
-        byte[] bytes;
         try (InputStream in = EvaluationDataset.class.getResourceAsStream(resource)) {
             if (in == null) throw new IllegalStateException("缺少固定评测数据集");
-            ByteArrayOutputStream out = new ByteArrayOutputStream();
-            byte[] buffer = new byte[4096];
-            int count;
-            while ((count = in.read(buffer)) != -1) out.write(buffer, 0, count);
-            bytes = out.toByteArray();
+            return parse(read(in));
         }
+    }
+
+    /** 从外部JSON加载公开语料；不复制进仓库，命中正文会进入本地报告，应使用允许复现的公开内容。 */
+    public static EvaluationDataset load(Path path) throws Exception {
+        if (path == null) throw new IllegalArgumentException("数据集路径不能为空");
+        try (InputStream in = Files.newInputStream(path)) { return parse(read(in)); }
+    }
+
+    /** 解析并校验版本化 JSON。 */
+    private static EvaluationDataset parse(byte[] bytes) throws Exception {
         JsonNode json = new ObjectMapper().readTree(new String(bytes, StandardCharsets.UTF_8));
+        if (json == null || !json.isObject() || !json.path("documents").isArray() || !json.path("questions").isArray())
+            throw new IllegalArgumentException("数据集必须包含文档和问题数组");
         Set<String> ids = new HashSet<String>();
         List<Source> docs = new ArrayList<Source>();
         for (JsonNode node : json.required("documents")) {
             String id = required(node, "id");
             if (!ids.add(id)) throw new IllegalArgumentException("重复文档 ID");
-            docs.add(new Source(id, required(node, "revision"), required(node, "text")));
+            docs.add(new Source(id, required(node, "revision"), required(node, "text"),
+                    node.path("sourceUrl").asText(""), node.path("sourceTitle").asText(""),
+                    node.path("capturedAt").asText("")));
         }
         Set<String> queryIds = new HashSet<String>();
         List<Question> qs = new ArrayList<Question>();
@@ -57,9 +68,23 @@ public final class EvaluationDataset {
             Set<String> relevant =
                     new LinkedHashSet<String>(strings(node.required("relevantDocuments")));
             if (!ids.containsAll(relevant)) throw new IllegalArgumentException("相关文档不存在");
+            Map<String, String> spans = new LinkedHashMap<String, String>();
+            if (node.has("evidence")) {
+                if (!node.get("evidence").isObject()) throw new IllegalArgumentException("证据标注必须为对象");
+                Iterator<Map.Entry<String, JsonNode>> entries = node.get("evidence").fields();
+                while (entries.hasNext()) {
+                    Map.Entry<String, JsonNode> entry = entries.next();
+                    if (!entry.getValue().isTextual()) throw new IllegalArgumentException("证据片段必须为文本");
+                    String span = entry.getValue().asText(); boolean located = false;
+                    for (Source doc : docs) if (doc.id.equals(entry.getKey()) && relevant.contains(doc.id)
+                            && !span.trim().isEmpty() && doc.text.contains(span)) located = true;
+                    if (!located) throw new IllegalArgumentException("证据标注无法回链");
+                    spans.put(entry.getKey(), span);
+                }
+            }
             qs.add(
                     new Question(
-                            id, required(node, "text"), relevant, strings(node.required("facts"))));
+                            id, required(node, "text"), relevant, strings(node.required("facts")), spans));
         }
         if (docs.isEmpty() || qs.isEmpty()) throw new IllegalArgumentException("空数据集");
         StringBuilder hash = new StringBuilder();
@@ -68,8 +93,21 @@ public final class EvaluationDataset {
         return new EvaluationDataset(required(json, "version"), hash.toString(), docs, qs);
     }
 
+    /** 读取资源流并限制单文件大小，避免误把大型原文塞入评测进程。 */
+    private static byte[] read(InputStream in) throws IOException {
+        ByteArrayOutputStream out = new ByteArrayOutputStream();
+        byte[] buffer = new byte[4096]; int count; long total = 0;
+        while ((count = in.read(buffer)) != -1) {
+            total += count;
+            if (total > 20L * 1024L * 1024L) throw new IllegalArgumentException("评测数据集超过20MiB");
+            out.write(buffer, 0, count);
+        }
+        return out.toByteArray();
+    }
+
     /** 强制必要的文本标注非空。 */
     private static String required(JsonNode node, String key) {
+        if (!node.isObject() || !node.path(key).isTextual()) throw new IllegalArgumentException("字段必须为文本 " + key);
         String value = node.required(key).asText();
         if (value.trim().isEmpty()) throw new IllegalArgumentException("空字段 " + key);
         return value;
@@ -79,7 +117,10 @@ public final class EvaluationDataset {
     private static List<String> strings(JsonNode node) {
         if (!node.isArray()) throw new IllegalArgumentException("标注必须为数组");
         List<String> values = new ArrayList<String>();
-        for (JsonNode value : node) values.add(value.asText());
+        for (JsonNode value : node) {
+            if (!value.isTextual() || value.asText().trim().isEmpty()) throw new IllegalArgumentException("数组元素必须为非空文本");
+            values.add(value.asText());
+        }
         return values;
     }
 
@@ -107,8 +148,17 @@ public final class EvaluationDataset {
     public static final class Source {
         /** 稳定标识、版本和不可变原文。 */
         private final String id, revision, text;
+        /** 公开语料来源元数据；合成语料为空，不伪造来源。 */
+        private final String sourceUrl, sourceTitle, capturedAt;
+        /** 返回原始来源链接。 */
+        public String getSourceUrl() { return sourceUrl; }
+        /** 返回来源标题。 */
+        public String getSourceTitle() { return sourceTitle; }
+        /** 返回本地核验日期，语料不是实时交易规则查询。 */
+        public String getCapturedAt() { return capturedAt; }
 
-        private Source(String id, String revision, String text) {
+        private Source(String id, String revision, String text, String url, String title, String date) {
+            sourceUrl = url; sourceTitle = title; capturedAt = date;
             this.id = id;
             this.revision = revision;
             this.text = text;
@@ -137,8 +187,13 @@ public final class EvaluationDataset {
 
         private final Set<String> relevant;
         private final List<String> facts;
+        /** 文档ID到原文证据片段，必须逐字回链。 */
+        private final Map<String, String> evidence;
+        /** 返回独立人工标注，检索器不得读取。 */
+        public Map<String, String> getEvidence() { return evidence; }
 
-        private Question(String id, String text, Set<String> relevant, List<String> facts) {
+        private Question(String id, String text, Set<String> relevant, List<String> facts, Map<String, String> spans) {
+            evidence = Collections.unmodifiableMap(new LinkedHashMap<String, String>(spans));
             this.id = id;
             this.text = text;
             this.relevant = Collections.unmodifiableSet(relevant);

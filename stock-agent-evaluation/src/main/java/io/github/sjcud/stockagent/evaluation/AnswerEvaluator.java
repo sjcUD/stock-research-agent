@@ -72,7 +72,7 @@ public final class AnswerEvaluator {
             invalidCitations = invalid; validCitationIds = valid;
         }
         /** 没有要求事实时不自动判满分，避免把空回答误报为忠实。 */
-        public boolean passed() { return expectedFacts > 0 && unsupportedFacts == 0 && invalidCitations == 0; }
+        public boolean passed() { return expectedFacts > 0 && supportedFacts == expectedFacts && unsupportedFacts == 0 && invalidCitations == 0; }
         public double coverage() { return expectedFacts == 0 ? 0.0 : (double) supportedFacts / expectedFacts; }
     }
 

@@ -1,0 +1,193 @@
+{
+  "version": "public-education-v1",
+  "description": "官方投教事实的独立短摘要；仅为固定历史评测快照，不是当前交易规则或投资建议。原网页链接与核验日期保留，不收录全文。",
+  "documents": [
+    {
+      "id": "star-price",
+      "revision": "snapshot-20261101",
+      "text": "科创板的竞价交易通常设20%的价格涨跌幅上限；IPO股票在上市后的最初五个交易日没有该项幅度约束。",
+      "sourceUrl": "https://edu.sse.com.cn/tib/qa/",
+      "sourceTitle": "上交所科创板投教问答第十三期：涨跌幅",
+      "capturedAt": "2026-11-01",
+      "contentType": "EDITORIAL_FACT_SUMMARY"
+    },
+    {
+      "id": "star-order",
+      "revision": "snapshot-20261101",
+      "text": "科创板限价申报的单笔数量区间为200股至10万股，市价申报区间为200股至5万股。超过200股后可逐股增加。持仓余量少于200股时应一次卖完。",
+      "sourceUrl": "https://edu.sse.com.cn/tib/qa/",
+      "sourceTitle": "上交所科创板投教问答第十三期：申报数量",
+      "capturedAt": "2026-11-01",
+      "contentType": "EDITORIAL_FACT_SUMMARY"
+    },
+    {
+      "id": "star-after",
+      "revision": "snapshot-20261101",
+      "text": "科创板盘后固定价格交易采用当日收盘价，并按时间先后顺序撮合。收盘定价申报的单笔数量区间为200股至100万股。",
+      "sourceUrl": "https://edu.sse.com.cn/tib/qa/",
+      "sourceTitle": "上交所科创板投教问答第十三期：盘后交易",
+      "capturedAt": "2026-11-01",
+      "contentType": "EDITORIAL_FACT_SUMMARY"
+    },
+    {
+      "id": "chinext-price",
+      "revision": "snapshot-20261101",
+      "text": "创业板IPO股票自上市起的头五个交易日无价格涨跌幅约束；之后竞价交易适用20%的涨跌幅比例。",
+      "sourceUrl": "https://www.szse.cn/www/investor/index/update/t20200729_580056.html",
+      "sourceTitle": "深交所2020-07-29创业板涨跌幅投教问答",
+      "capturedAt": "2026-11-01",
+      "contentType": "EDITORIAL_FACT_SUMMARY"
+    }
+  ],
+  "questions": [
+    {
+      "id": "p01",
+      "text": "科创板限价申报单笔最多多少股？",
+      "relevantDocuments": [
+        "star-order"
+      ],
+      "facts": [
+        "10万股"
+      ],
+      "evidence": {
+        "star-order": "限价申报的单笔数量区间为200股至10万股"
+      }
+    },
+    {
+      "id": "p02",
+      "text": "科创板市价申报能一次报10万股吗？",
+      "relevantDocuments": [
+        "star-order"
+      ],
+      "facts": [
+        "5万股"
+      ],
+      "evidence": {
+        "star-order": "市价申报区间为200股至5万股"
+      }
+    },
+    {
+      "id": "p03",
+      "text": "科创板持有199股应该如何卖出？",
+      "relevantDocuments": [
+        "star-order"
+      ],
+      "facts": [
+        "一次卖完"
+      ],
+      "evidence": {
+        "star-order": "持仓余量少于200股时应一次卖完"
+      }
+    },
+    {
+      "id": "p04",
+      "text": "科创板能不能申报201股？",
+      "relevantDocuments": [
+        "star-order"
+      ],
+      "facts": [
+        "逐股增加"
+      ],
+      "evidence": {
+        "star-order": "超过200股后可逐股增加"
+      }
+    },
+    {
+      "id": "p05",
+      "text": "科创板盘后固定价格交易用什么价格？",
+      "relevantDocuments": [
+        "star-after"
+      ],
+      "facts": [
+        "当日收盘价"
+      ],
+      "evidence": {
+        "star-after": "采用当日收盘价"
+      }
+    },
+    {
+      "id": "p06",
+      "text": "科创板盘后收盘定价申报上限和市价申报上限分别是多少？",
+      "relevantDocuments": [
+        "star-after",
+        "star-order"
+      ],
+      "facts": [
+        "100万股",
+        "5万股"
+      ],
+      "evidence": {
+        "star-after": "单笔数量区间为200股至100万股",
+        "star-order": "市价申报区间为200股至5万股"
+      }
+    },
+    {
+      "id": "p07",
+      "text": "创业板IPO上市第二个交易日有20%的限制吗？",
+      "relevantDocuments": [
+        "chinext-price"
+      ],
+      "facts": [
+        "头五个交易日无价格涨跌幅约束"
+      ],
+      "evidence": {
+        "chinext-price": "头五个交易日无价格涨跌幅约束"
+      }
+    },
+    {
+      "id": "p08",
+      "text": "科创板与创业板IPO后头五个交易日有哪些相同的涨跌幅安排？",
+      "relevantDocuments": [
+        "star-price",
+        "chinext-price"
+      ],
+      "facts": [
+        "五个交易日"
+      ],
+      "evidence": {
+        "star-price": "IPO股票在上市后的最初五个交易日没有该项幅度约束",
+        "chinext-price": "头五个交易日无价格涨跌幅约束"
+      }
+    },
+    {
+      "id": "p09",
+      "text": "科创板IPO初期之后通常适用的竞价涨跌幅是多少？",
+      "relevantDocuments": [
+        "star-price"
+      ],
+      "facts": [
+        "20%"
+      ],
+      "evidence": {
+        "star-price": "竞价交易通常设20%的价格涨跌幅上限"
+      }
+    },
+    {
+      "id": "p10",
+      "text": "科创板明天哪只股票一定上涨20%？",
+      "relevantDocuments": [],
+      "facts": [],
+      "evidence": {}
+    },
+    {
+      "id": "p11",
+      "text": "这些材料能告诉我北交所买入最低股数吗？",
+      "relevantDocuments": [],
+      "facts": [],
+      "evidence": {}
+    },
+    {
+      "id": "p12",
+      "text": "科创板盘后固定价格交易的撮合顺序是什么？",
+      "relevantDocuments": [
+        "star-after"
+      ],
+      "facts": [
+        "时间先后顺序"
+      ],
+      "evidence": {
+        "star-after": "按时间先后顺序撮合"
+      }
+    }
+  ]
+}

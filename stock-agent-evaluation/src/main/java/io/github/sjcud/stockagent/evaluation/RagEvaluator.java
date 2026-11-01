@@ -45,7 +45,28 @@ public final class RagEvaluator {
                 negative ? null : rr,
                 negative ? filtered.isEmpty() ? 0.0 : 1.0 : null,
                 valid,
-                filtered.size());
+                filtered.size(), annotatedRecall(q, filtered));
+    }
+
+    /** 片段标注召回：只有有效引用区间连续覆盖整段标注才算支持，来自同文档不自动得分。 */
+    private Double annotatedRecall(EvaluationDataset.Question question, List<RetrievalHit> hits) {
+        if (question.getEvidence().isEmpty()) return null;
+        int supported = 0;
+        for (Map.Entry<String, String> entry : question.getEvidence().entrySet()) {
+            String source = null; for (EvaluationDataset.Source doc : dataset.getDocuments()) if (doc.getId().equals(entry.getKey())) source = doc.getText();
+            if (source == null) continue;
+            int start = source.indexOf(entry.getValue()), end = start + entry.getValue().length();
+            List<RetrievalHit> relevant = new ArrayList<RetrievalHit>();
+            for (RetrievalHit hit : hits) if (validCitation(hit) && entry.getKey().equals(hit.getCitation().getDocumentId())) relevant.add(hit);
+            Collections.sort(relevant, Comparator.comparingInt(h -> h.getCitation().getOffset()));
+            int cursor = start;
+            for (RetrievalHit hit : relevant) {
+                int offset = hit.getCitation().getOffset();
+                if (offset <= cursor && offset + hit.getText().length() > cursor) cursor = offset + hit.getText().length();
+            }
+            if (cursor >= end) supported++;
+        }
+        return (double) supported / question.getEvidence().size();
     }
 
     /** 检查来源、版本、页码、偏移、片段 ID 和原文逐字符一致，拒绝伪造 payload。 */
@@ -71,11 +92,14 @@ public final class RagEvaluator {
     public static final class Score {
         /** null 表示不适用；文档级指标范围0到1。 */
         public final Double recall, hit, reciprocalRank, falsePositive;
+        /** 已标注片段被完整命中的比例，旧数据集无标注时为null。 */
+        public final Double evidenceRecall;
 
         /** 可回链引用数与命中片段总数。 */
         public final int validCitations, totalHits;
 
-        private Score(Double recall, Double hit, Double rr, Double fp, int valid, int count) {
+        private Score(Double recall, Double hit, Double rr, Double fp, int valid, int count, Double evidenceRecall) {
+            this.evidenceRecall = evidenceRecall;
             this.recall = recall;
             this.hit = hit;
             this.reciprocalRank = rr;

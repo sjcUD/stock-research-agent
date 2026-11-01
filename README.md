@@ -112,7 +112,7 @@ QDRANT_INTEGRATION=true mvn -pl stock-agent-rag -am \
 
 模型 Base URL 和路径兼容配置参见 [TROUBLESHOOTING.md](TROUBLESHOOTING.md)。DashScope Embedding 保留完整 `/compatible-mode/v1` Base URL，并显式设置 `embeddingsPath("/embeddings")`。
 
-P11 已增加固定合成数据集、检索参数对比、回答规则和工具调度契约评测；运行方式和学习入口见 [评测模块说明](stock-agent-evaluation/README.md)。P12本地运行与部署、P6会话归档和P7 Harness 完整运行时已完成。下一步继续扩充困难语料、人工盲评和语义忠实度评测；生产检索已支持可配置最低分和可替换重排器。前端沿用已确定的浅色聊天交互设计。
+P11 已增加固定合成数据集、检索参数对比、回答规则和工具调度契约评测；运行方式和学习入口见 [评测模块说明](stock-agent-evaluation/README.md)。P12本地运行与部署、P6会话归档和P7 Harness 完整运行时已完成。P11已补齐公开语料、语义模型评审、实际usage和盲评工具链；生产检索支持可配置最低分和可替换重排器。前端沿用已确定的浅色聊天交互设计。
 
 ## P9 市场数据与研究
 
@@ -228,3 +228,6 @@ mvn -pl stock-agent-evaluation -am test -Dstock.eval.report="$PWD/evaluation-rep
 工作台`/api/research/tasks`已接入可替换归档策略。MySQL启用时，入队前事务保存问题和任务，完成时事务保存助手正文与终态，独立保存已完成角色的实际输入、输出和耗时。服务重启只恢复历史并中断未完成任务，不自动重放模型。Compose自动启用MySQL；宿主运行需配置`STOCK_AGENT_MYSQL_ENABLED=true`及有效连接。
 
 学习入口、数据表、API、存储故障和单活边界见[PERSISTENCE.md](PERSISTENCE.md)。保存消息与模型上下文压缩分别有独立边界：前者负责可恢复归档，后者负责本轮提示词预算和证据选择。
+
+
+P11收口复现入口为 `scripts/evaluate.sh offline|live|blind`，详见[评测说明](stock-agent-evaluation/README.md#p11-收口验收与复现)。包含三套语料的216组参数对照、可回链片段标注、模型重排、逐结论语义裁判、真实ReactAgent工具选择/两轮追问/暂时失败恢复，以及actual usage、显式费率估算和延迟分布。模型评分与人工评分分开；人工盲评工具链已交付，未发生的人类采样不会被标为已完成。生产规模压测、账单对账与更多财报语料按需要扩展。
