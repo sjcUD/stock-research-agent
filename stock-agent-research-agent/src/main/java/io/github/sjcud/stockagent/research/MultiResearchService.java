@@ -12,6 +12,8 @@ import java.util.concurrent.*;
 
 /** RAG → 五个独立分析师 → 组合经理，所有模型调用共用一次请求预算。 */
 public class MultiResearchService {
+    /** 统一处理多角色共享上下文，避免各角色各自截断造成证据不一致。 */
+    private final ContextPolicy contextPolicy = new ContextPolicy();
     /** 与向量数据库供应商无关的检索接口。 */
     private final VectorStore store;
 
@@ -55,6 +57,12 @@ public class MultiResearchService {
             ResearchMode mode,
             ResearchProgressListener progress)
             throws Exception {
+        return ask(question, data, mode, progress, "");
+    }
+
+    /** 带历史背景的托管研究入口。 */
+    public MultiResearchAnswer ask(String question, StockResearchData data, ResearchMode mode,
+            ResearchProgressListener progress, String history) throws Exception {
         if (data == null) {
             throw new IllegalArgumentException("市场数据不能为空");
         }
@@ -64,7 +72,8 @@ public class MultiResearchService {
                 mode,
                 new MarketContextFormatter().format(data),
                 false,
-                progress);
+                progress,
+                history);
     }
 
     /** 共用角色、预算和汇总流程；RAG 是否启用由入口策略决定。 */
@@ -75,6 +84,14 @@ public class MultiResearchService {
             String marketEvidence,
             boolean includeRag,
             ResearchProgressListener progress)
+            throws Exception {
+        return execute(question, snapshot, mode, marketEvidence, includeRag, progress, "");
+    }
+
+    /** 带历史背景的完整研究流程。 */
+    private MultiResearchAnswer execute(
+            String question, MarketSnapshot snapshot, ResearchMode mode, String marketEvidence,
+            boolean includeRag, ResearchProgressListener progress, String history)
             throws Exception {
         if (question == null || question.trim().isEmpty() || snapshot == null || mode == null) {
             throw new IllegalArgumentException("问题、行情和模式不能为空");
@@ -97,8 +114,20 @@ public class MultiResearchService {
                     .append(hit.getText())
                     .append('\n');
         }
+        List<ContextPolicy.Evidence> contextEvidence = new java.util.ArrayList<ContextPolicy.Evidence>();
+        if (!marketEvidence.isEmpty()) contextEvidence.add(new ContextPolicy.Evidence("MARKET_FACTS", marketEvidence, 1.0D));
+        for (RetrievalHit hit : hits) contextEvidence.add(new ContextPolicy.Evidence(hit.getChunkId(), hit.getText(), hit.getScore()));
+        List<String> historyLines = new java.util.ArrayList<String>();
+        if (history != null && !history.trim().isEmpty()) {
+            for (String line : history.split("\\n")) if (!line.trim().isEmpty()) historyLines.add(line);
+        }
+        String facts = "证券=" + snapshot.getSymbol() + "；收盘=" + snapshot.getClose()
+                + "；行情日=" + snapshot.getAsOf() + "；来源=" + snapshot.getSource();
+        ContextPolicy.Prepared prepared = contextPolicy.compact("ANALYSTS", question, facts,
+                historyLines, contextEvidence, 20000, 4000);
+        String compactEvidence = prepared.getSupplement();
         List<AnalystResult> results =
-                orchestrator.run(question, snapshot, evidence.toString(), mode, ledger, progress);
+                orchestrator.run(question, snapshot, compactEvidence, mode, ledger, progress);
         // 汇总也使用 Future 的剩余时限，避免分析师完成后经理无限等待。
         ExecutorService pool = Executors.newSingleThreadExecutor();
         Future<PortfolioDecision> future = null;
@@ -130,7 +159,8 @@ public class MultiResearchService {
                                                     () -> Thread.currentThread().isInterrupted(),
                                                     tokens));
             return new MultiResearchAnswer(
-                    mode, future.get(ledger.remainingMillis(), TimeUnit.MILLISECONDS), hits);
+                    mode, future.get(ledger.remainingMillis(), TimeUnit.MILLISECONDS), hits,
+                    prepared.getReport());
         } finally {
             if (future != null) {
                 future.cancel(true);

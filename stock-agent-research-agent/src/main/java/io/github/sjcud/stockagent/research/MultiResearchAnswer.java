@@ -2,6 +2,7 @@ package io.github.sjcud.stockagent.research;
 
 import io.github.sjcud.stockagent.rag.retrieval.RetrievalHit;
 import java.util.*;
+import io.github.sjcud.stockagent.runtime.harness.ContextPolicy;
 
 /** 多角色研究响应，保留来源引用与六个角色的执行过程。 */
 public final class MultiResearchAnswer {
@@ -13,8 +14,15 @@ public final class MultiResearchAnswer {
     private final List<RetrievalHit> evidence;
     /** 本次运行的角色输入输出，仅在响应中保存。 */
     private final List<AgentTrace> traces;
+    private final ContextPolicy.Report contextReport;
     /** 创建不可变响应，避免前端适配层修改共享列表。 */
     public MultiResearchAnswer(ResearchMode mode, PortfolioDecision decision, List<RetrievalHit> evidence) {
+        this(mode, decision, evidence, null);
+    }
+
+    /** 创建带上下文裁剪诊断的响应。 */
+    public MultiResearchAnswer(ResearchMode mode, PortfolioDecision decision, List<RetrievalHit> evidence,
+            ContextPolicy.Report contextReport) {
         this.mode = mode;
         this.decision = decision;
         this.evidence = Collections.unmodifiableList(new ArrayList<RetrievalHit>(evidence));
@@ -24,6 +32,7 @@ public final class MultiResearchAnswer {
         }
         if (decision.getTrace() != null) { collected.add(decision.getTrace()); }
         this.traces = Collections.unmodifiableList(collected);
+        this.contextReport = contextReport;
     }
     /** 返回调度模式。 */
     public ResearchMode getMode() { return mode; }
@@ -33,4 +42,6 @@ public final class MultiResearchAnswer {
     public List<RetrievalHit> getEvidence() { return evidence; }
     /** 返回本次运行的执行轨迹。 */
     public List<AgentTrace> getTraces() { return traces; }
+    /** 返回本轮上下文裁剪诊断。 */
+    public ContextPolicy.Report getContextReport() { return contextReport; }
 }

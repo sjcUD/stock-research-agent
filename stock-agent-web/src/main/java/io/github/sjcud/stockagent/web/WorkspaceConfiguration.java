@@ -63,7 +63,8 @@ public class WorkspaceConfiguration {
                                 request.getQuestion(),
                                 context,
                                 () -> Thread.currentThread().isInterrupted(),
-                                progress);
+                                progress,
+                                request.getHistoryContext());
                     }
                     progress.onProgress("DATA", "", "STARTED");
                     StockResearchData data = provider.load(request.getSymbol(), request.getAsOf());
@@ -77,7 +78,8 @@ public class WorkspaceConfiguration {
                     }
                     return new MarketResearchAnswer(
                             data,
-                            service.ask(request.getQuestion(), data, request.getMode(), progress));
+                            service.ask(request.getQuestion(), data, request.getMode(), progress,
+                                    request.getHistoryContext()));
                 },
                 archive);
     }

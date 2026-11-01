@@ -150,7 +150,7 @@ public class HarnessCallExecutorTest {
 
                     @Override
                     public long remainingMillis() {
-                        return 0;
+                        return Math.max(0, 100-clock.get());
                     }
                 };
         assertThrows(

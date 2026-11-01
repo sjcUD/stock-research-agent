@@ -69,6 +69,15 @@ public class ResearchTaskService implements AutoCloseable {
         TaskRequest input = Objects.requireNonNull(request, "request").copy();
         if (input.conversationId == null) input.conversationId = UUID.randomUUID().toString();
         UUID.fromString(input.conversationId);
+        if (input.historyContext == null) {
+            StringBuilder history = new StringBuilder();
+            for (WorkspaceRepository.Entry previous : archive.entries(input.conversationId)) {
+                history.append("用户：").append(previous.question).append('\n');
+                JsonNode snapshot = read(previous.snapshotJson);
+                if (snapshot.has("result")) history.append("助手：").append(snapshot.get("result")).append('\n');
+            }
+            input.historyContext = history.toString();
+        }
         if (input.displayQuestion == null) input.displayQuestion = input.question;
         if (input.displayQuestion == null
                 || input.displayQuestion.trim().isEmpty()
@@ -216,6 +225,12 @@ public class ResearchTaskService implements AutoCloseable {
         /** 用户原问题，与包含追问背景的模型输入分开保存。 */
         private String displayQuestion;
 
+        /** 服务端整理的历史背景，不接受客户端直接注入。 */
+        private String historyContext;
+
+        /** 返回当前会话的历史背景。 */
+        public String getHistoryContext() { return historyContext; }
+
         /** 返回会话ID。 */
         public String getConversationId() {
             return conversationId;
@@ -308,6 +323,7 @@ public class ResearchTaskService implements AutoCloseable {
             value.mode = mode;
             value.conversationId = conversationId;
             value.displayQuestion = displayQuestion;
+            value.historyContext = historyContext;
             return value;
         }
     }

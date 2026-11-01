@@ -16,7 +16,7 @@
 
 当前多分析师是提示词角色，调度采用 Java 执行器，尚未通过 Alibaba Graph 构建完整协作图。P9 已接入日线、技术指标及最近资讯；完整财报、实时分时和社交情绪样本尚未接入。只有一个收盘价时，角色应说明无法计算 MACD、RSI 等指标。它们不会自动获得不存在的数据，也不会执行真实交易。
 
-已接通过真实 ChatModel、Embedding、Qdrant 和 MySQL 的基础联调。真实日线已接入；P10 浅色聊天工作台已实现；MySQL模式可从服务端恢复会话，浏览器保留有限缓存；上下文压缩仍未接入聊天链路。完整进度与后续工作见 [TODO.md](TODO.md)，模型兼容性经验见 [TROUBLESHOOTING.md](TROUBLESHOOTING.md)。
+已接通过真实 ChatModel、Embedding、Qdrant 和 MySQL 的基础联调。真实日线已接入；P10 浅色聊天工作台已实现；MySQL模式可从服务端恢复会话，浏览器保留有限缓存；P7上下文压缩已接入研究链路。完整进度与后续工作见 [TODO.md](TODO.md)，模型兼容性经验见 [TROUBLESHOOTING.md](TROUBLESHOOTING.md)。
 
 ## 模块
 
@@ -78,7 +78,9 @@ curl http://localhost:8080/api/research/chat/multi \
 
 支持 `thinking.type` 的供应商可配置 `STOCK_AGENT_CHAT_THINKING_MODE=disabled` 进行普通研究演示，或设为 `enabled` 并预留充足输出额度；留空时不发送扩展参数。真实 HTTP 验收使用 DeepSeek、2048 输出上限、显式 `disabled`。该开关通过 Spring AI `OpenAiChatOptions.extraBody` 透传，不另建 HTTP 网关。
 
-默认每次多角色请求最多六次模型调用、120 秒总截止时间、60000 估算 Token 额度。分析师按完整提示词字符数加 2048 输出预留估算，经理按报告及证据文字保守估算；并非模型真实 usage 或精确费用上限。任一角色失败即终止研究，不调用经理汇总残缺报告。Future 取消会发送线程中断；底层网络请求是否立即退出取决于 SDK，HTTP 读取超时配置仍在待办中。
+默认每次多角色请求最多六次模型调用、120 秒总截止时间、60000 估算 Token 额度。父账本和分析师/经理阶段子账本原子预留调用与 Token；并非模型真实 usage 或精确费用上限。模型连接和正文读取均有 HTTP 超时，阶段剩余时间会收紧正文读取上限。任一角色失败即终止研究，不调用经理汇总残缺报告。
+
+P7上下文策略保留当前问题和结构化行情事实，历史消息按最近优先裁剪，证据按分数选择完整片段并保留引用ID；不会调用摘要模型。`contextReport` 会随研究结果返回压缩前后 UTF-8 字节估算、保留/丢弃数量和移除的历史引用。该估算用于学习和预算保护，不等于供应商真实 Token usage。
 
 ## 通过 P8 学习什么
 
@@ -90,7 +92,7 @@ curl http://localhost:8080/api/research/chat/multi \
 6. **可观测性**：`AgentTrace` 保存实际输入、输出与耗时；工作台已独立归档完成角色轨迹，整体失败时保留此前角色；失败阶段记录状态与安全错误，不伪造模型输出。
 7. **可替换设计**：网关隔离模型供应商，角色接口便于后续接入带工具的 Agent，向量存储接口隔离 Qdrant。
 
-这一步实现的是可测试的多角色协作基础。自主工具选择、Graph 状态管理、多轮辩论、长期记忆、上下文压缩与评测需要各自独立实现和验证。
+这一步实现的是可测试的多角色协作基础。自主工具选择、Graph 状态管理、多轮辩论、长期记忆和真实 usage 结算仍需各自独立实现和验证。
 
 ## 验证
 
@@ -110,7 +112,7 @@ QDRANT_INTEGRATION=true mvn -pl stock-agent-rag -am \
 
 模型 Base URL 和路径兼容配置参见 [TROUBLESHOOTING.md](TROUBLESHOOTING.md)。DashScope Embedding 保留完整 `/compatible-mode/v1` Base URL，并显式设置 `embeddingsPath("/embeddings")`。
 
-P11 已增加固定合成数据集、检索参数对比、回答规则和工具调度契约评测；运行方式和学习入口见 [评测模块说明](stock-agent-evaluation/README.md)。P12本地运行与部署和P6会话归档已完成，下一步补齐P7模型 HTTP 超时、阶段预算和上下文压缩。前端沿用已确定的浅色聊天交互设计。
+P11 已增加固定合成数据集、检索参数对比、回答规则和工具调度契约评测；运行方式和学习入口见 [评测模块说明](stock-agent-evaluation/README.md)。P12本地运行与部署、P6会话归档和P7 Harness 完整运行时已完成。下一步优先扩充困难语料、无答案拒答和语义忠实度评测。前端沿用已确定的浅色聊天交互设计。
 
 ## P9 市场数据与研究
 
@@ -150,7 +152,7 @@ curl http://localhost:8080/api/research/chat/market \
 - SMA5/20 使用窗口收盘价均值；RSI14 使用 Wilder 平滑，平盘约定50；MACD(12,26,9) 用窗口首日收盘价初始化 EMA，柱值为 `2*(DIF-DEA)`。未复权除权跳变和窗口初值都可能导致指标与行情软件不同。
 - 核心行情失败会终止 LIVE 请求；新闻或公告失败以 `UNAVAILABLE` 显式降级。价格须为正且满足高低关系；金额文本限制为12位整数、6位小数，拒绝异常科学计数法膨胀。
 - 默认连接3秒、读取空闲5秒、总网络截止8秒、响应上限1MiB；所有上游共享每分钟60次的发送间隔，排队超过1.5秒拒绝。总截止及线程中断会主动取消 HTTP 请求，每次请求释放连接和监控线程。
-- 进入模型的新闻最多3条、公告最多5条，摘要截短明确标记；完整结构化结果仍返回给客户端。这是上下文选择，不是已经完成 P7 的历史上下文压缩。组合经理去重同一份共享证据，避免五角色重复放大输入。
+- 进入模型的新闻最多3条、公告最多5条，摘要截短明确标记；完整结构化结果仍返回给客户端。P7另有统一上下文压缩策略，负责历史和证据的配额分配。组合经理去重同一份共享证据，避免五角色重复放大输入。
 
 网页数据适配可能随供应商协议变化。参考的是 [AKShare 腾讯日线接口说明](https://akshare.akfamily.xyz/data/stock/stock_quote.html)及[个股新闻说明](https://akshare.akfamily.xyz/data/stock/stock_research.html)，Java 通过 `HttpTextClient`、`StockDataProvider` 隔离传输和来源，不需要 Python 侧车。替换为其他数据源时，研究服务无需依赖新供应商 SDK。
 
@@ -205,7 +207,7 @@ mvn test
 npm run test:ui
 ```
 
-P10可学习：异步任务与领域执行分离、真实进度观察、排队背压、终态不可回退、取消与迟到结果竞争、断线重连/幂等边界、有限上下文选择、证据展示与HTML净化。它没有替代P7上下文压缩，也没有宣称实现Graph状态持久化。
+P10可学习：异步任务与领域执行分离、真实进度观察、排队背压、终态不可回退、取消与迟到结果竞争、断线重连/幂等边界、有限上下文选择、证据展示与HTML净化。它没有宣称实现Graph状态持久化。
 
 ## P11 评测与质量验证
 
@@ -223,4 +225,4 @@ mvn -pl stock-agent-evaluation -am test -Dstock.eval.report="$PWD/evaluation-rep
 
 工作台`/api/research/tasks`已接入可替换归档策略。MySQL启用时，入队前事务保存问题和任务，完成时事务保存助手正文与终态，独立保存已完成角色的实际输入、输出和耗时。服务重启只恢复历史并中断未完成任务，不自动重放模型。Compose自动启用MySQL；宿主运行需配置`STOCK_AGENT_MYSQL_ENABLED=true`及有效连接。
 
-学习入口、数据表、API、存储故障和单活边界见[PERSISTENCE.md](PERSISTENCE.md)。保存消息不等于已经完成模型上下文压缩，P7仍按TODO继续。
+学习入口、数据表、API、存储故障和单活边界见[PERSISTENCE.md](PERSISTENCE.md)。保存消息与模型上下文压缩分别有独立边界：前者负责可恢复归档，后者负责本轮提示词预算和证据选择。

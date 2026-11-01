@@ -49,10 +49,10 @@ public class HarnessCallExecutor {
         for (int attempt = 1; attempt <= maxAttempts; attempt++) {
             checkState(ledger, cancelled);
             if (!ledger.reserveAttempt(estimatedTokens)) {
-                throw new IllegalStateException("模型调用或 Token 预算已耗尽");
+                throw new BudgetExceededException();
             }
             try {
-                return action.call();
+                return new DeadlineExecutor().call(action, ledger, cancelled);
             } catch (RetryableOperationException exception) {
                 lastRetryable = exception;
                 if (failureClassifier.classify(exception.getStatusCode()) != FailureClass.RETRYABLE
@@ -70,7 +70,7 @@ public class HarnessCallExecutor {
             throw new IllegalStateException("研究任务已取消");
         }
         if (ledger.isExpired()) {
-            throw new IllegalStateException("研究任务已超时");
+            throw new HarnessTimeoutException();
         }
     }
 
