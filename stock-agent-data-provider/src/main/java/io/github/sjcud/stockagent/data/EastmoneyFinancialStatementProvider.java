@@ -1,0 +1,10 @@
+package io.github.sjcud.stockagent.data;
+
+import com.fasterxml.jackson.databind.*; import java.time.*; import java.security.*; import java.nio.charset.StandardCharsets; import java.util.*;
+/** 东方财富财务指标 JSON 适配器；接口地址可配置，解析失败明确返回不可用。 */
+public final class EastmoneyFinancialStatementProvider implements FinancialStatementProvider {
+ private final HttpTextClient client; private final String urlTemplate; private final ObjectMapper json=new ObjectMapper();
+ public EastmoneyFinancialStatementProvider(HttpTextClient client,String urlTemplate){if(client==null||urlTemplate==null||!urlTemplate.contains("%s"))throw new IllegalArgumentException("财报接口配置无效");this.client=client;this.urlTemplate=urlTemplate;}
+ public DataFeed<FinancialStatement> load(String symbol,LocalDate asOf){try{String raw=client.get(String.format(Locale.ROOT,urlTemplate,java.net.URLEncoder.encode(symbol,"UTF-8")));JsonNode rows=json.readTree(raw).path("data");List<FinancialStatement> values=new ArrayList<FinancialStatement>();if(rows.isArray())for(JsonNode row:rows){String report=row.path("reportPeriod").asText("");String published=row.path("publishedAt").asText("");if(report.isEmpty()||published.isEmpty()||LocalDate.parse(published.substring(0,10)).isAfter(asOf))continue;values.add(new FinancialStatement(report,published,row.path("currency").asText("CNY"),row.path("revenue").asText("0"),row.path("netProfit").asText("0")));}return feed(raw,values);}catch(Exception e){return new DataFeed<FinancialStatement>(urlTemplate,"",Instant.now().toString(),DataStatus.UNAVAILABLE,true,"UPSTREAM_OR_SCHEMA_UNAVAILABLE",Collections.<FinancialStatement>emptyList());}}
+ private DataFeed<FinancialStatement> feed(String raw,List<FinancialStatement> rows)throws Exception{byte[] d=MessageDigest.getInstance("SHA-256").digest(raw.getBytes(StandardCharsets.UTF_8));StringBuilder h=new StringBuilder("sha256:");for(byte b:d)h.append(String.format(Locale.ROOT,"%02x",b&255));return new DataFeed<FinancialStatement>(urlTemplate,h.toString(),Instant.now().toString(),rows.isEmpty()?DataStatus.EMPTY:DataStatus.AVAILABLE,true,"DISCLOSURE_DATE_FILTERED",rows);}
+}

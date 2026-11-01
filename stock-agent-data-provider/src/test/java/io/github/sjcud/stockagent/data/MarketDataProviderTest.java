@@ -106,4 +106,21 @@ public class MarketDataProviderTest {
         assertFalse(result.getText().contains("<script>")); assertTrue(result.getText().contains("公告正文"));
     }
 
+    @Test
+    public void supportsBeijingAndUsIdentityWithoutCrossMarketConfusion() {
+        assertEquals("830001", LiveStockDataProvider.normalizeSymbol("bj830001"));
+        assertEquals("us:aapl", LiveStockDataProvider.normalizeSymbol("AAPL.US"));
+        assertThrows(IllegalArgumentException.class, () -> LiveStockDataProvider.normalizeSymbol("sh830001"));
+    }
+
+    @Test
+    public void parsesStooqUsCsvWithSharesVolume() {
+        String csv = "Date,Open,High,Low,Close,Volume\n2026-10-29,100,105,99,104,1000\n2026-10-30,104,108,103,107,2000\n";
+        LiveStockDataProvider provider = new LiveStockDataProvider(url -> csv, clock);
+        StockResearchData data = provider.load("AAPL.US", "2026-10-30");
+        assertEquals("STOOQ_DAILY_UNADJUSTED", data.getSnapshot().getSource());
+        assertEquals(new java.math.BigDecimal("2000"), data.getHistory().getItems().get(1).getVolume());
+        assertEquals(DataStatus.UNAVAILABLE, data.getNews().getStatus());
+    }
+
 }

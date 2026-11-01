@@ -259,3 +259,8 @@ LIVE 结果使用证券代码、研究截止日和复权口径作为 point-in-ti
 
 
 P9 剩余数据源边界：`FinancialStatement` 和 `SentimentSnapshot` 已加入领域契约，结果包含 `UNAVAILABLE` 状态和原因，只有披露日不晚于研究日的数据才允许进入上下文。公告全文通过 `STOCK_AGENT_DATA_ANNOUNCEMENTS_FULL_TEXT=true` 开启，默认关闭；全文会被净化为纯文本并限制长度，列表失败与全文失败分别记录。真实财报和社交情绪供应商仍需按项目实际授权接入。
+
+
+### P12 运行验收
+
+`./scripts/dev.sh start` 使用独立 Compose 项目启动 MySQL、Qdrant 和应用，应用端口只绑定本机回环地址。`check` 检查 readiness，`stop` 保留命名卷，`clean --delete-data --confirm=stock-research-agent` 才删除当前项目数据。构建阶段采用非 root 运行镜像，包含 Tesseract 中文语言包和原文数据卷。

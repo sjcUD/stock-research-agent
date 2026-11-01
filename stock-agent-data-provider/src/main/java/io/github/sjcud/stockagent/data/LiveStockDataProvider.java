@@ -28,20 +28,26 @@ public class LiveStockDataProvider implements StockDataProvider {
     private final PointInTimeDataCache cache;
     /** 可选公告全文策略；默认不下载正文，列表状态仍然保留。 */
     private final AnnouncementTextProvider announcementTextProvider;
+    private final FinancialStatementProvider financials;
+    private final SentimentProvider sentiment;
     /** JSON 解析器在构造后不修改配置，允许并发读取。 */
     private final ObjectMapper json = new ObjectMapper();
     /** 注入网络适配器与时钟。 */
     public LiveStockDataProvider(HttpTextClient client, Clock clock) {
-        this(client, clock, new PointInTimeDataCache(64, java.time.Duration.ofMinutes(5), clock), article -> new AnnouncementTextProvider.FullText("", DataStatus.UNAVAILABLE));
+        this(client, clock, new PointInTimeDataCache(64, java.time.Duration.ofMinutes(5), clock), article -> new AnnouncementTextProvider.FullText("", DataStatus.UNAVAILABLE), new UnavailableFinancialStatementProvider(), new UnavailableSentimentProvider());
     }
     /** 注入缓存策略，测试可使用短TTL或禁用式单条缓存。 */
     public LiveStockDataProvider(HttpTextClient client, Clock clock, PointInTimeDataCache cache) {
-        this(client, clock, cache, article -> new AnnouncementTextProvider.FullText("", DataStatus.UNAVAILABLE));
+        this(client, clock, cache, article -> new AnnouncementTextProvider.FullText("", DataStatus.UNAVAILABLE), new UnavailableFinancialStatementProvider(), new UnavailableSentimentProvider());
     }
     /** 注入公告全文适配器，列表和全文可以独立降级。 */
     public LiveStockDataProvider(HttpTextClient client, Clock clock, PointInTimeDataCache cache, AnnouncementTextProvider textProvider) {
-        if (client == null || clock == null || cache == null || textProvider == null) { throw new IllegalArgumentException("取数依赖不能为空"); }
-        this.client = client; this.clock = clock.withZone(ZoneId.of("Asia/Shanghai")); this.cache = cache; this.announcementTextProvider = textProvider;
+        this(client, clock, cache, textProvider, new UnavailableFinancialStatementProvider(), new UnavailableSentimentProvider());
+    }
+    /** 注入财报和情绪供应商；两者失败不阻断核心行情。 */
+    public LiveStockDataProvider(HttpTextClient client, Clock clock, PointInTimeDataCache cache, AnnouncementTextProvider textProvider, FinancialStatementProvider financials, SentimentProvider sentiment) {
+        if (client == null || clock == null || cache == null || textProvider == null || financials == null || sentiment == null) { throw new IllegalArgumentException("取数依赖不能为空"); }
+        this.client = client; this.clock = clock.withZone(ZoneId.of("Asia/Shanghai")); this.cache = cache; this.announcementTextProvider = textProvider; this.financials = financials; this.sentiment = sentiment;
     }
     /** 加载按日终截止的数据；核心行情失败中止，辅助资讯失败显式降级。 */
     @Override public StockResearchData load(String symbol, String asOf) {
@@ -55,6 +61,7 @@ public class LiveStockDataProvider implements StockDataProvider {
         if (cutoff.isAfter(today) || (cutoff.equals(today) && LocalTime.now(clock).isBefore(LocalTime.of(16, 0)))) {
             throw new IllegalArgumentException("只支持已经结束并完成日线更新的日终研究日期");
         }
+        if (normalized.startsWith("us:")) return loadUs(normalized.substring(3), asOf, cutoff);
         PriceAdjustmentMode selected = adjustment == null ? PriceAdjustmentMode.UNADJUSTED : adjustment;
         StockResearchData cached = cache.get(normalized, asOf, selected);
         if (cached != null) return cached;
@@ -77,25 +84,56 @@ public class LiveStockDataProvider implements StockDataProvider {
         }
         StockResearchData result = new StockResearchData(asOf, DataMode.LIVE, snapshot, history,
                 articles(normalized, cutoff, false), articles(normalized, cutoff, true),
-                TechnicalIndicators.calculate(history.getItems()), selected, actions);
+                TechnicalIndicators.calculate(history.getItems()), selected, actions,
+                financials.load(normalized, cutoff), sentiment.load(normalized, cutoff));
         cache.put(normalized, asOf, selected, result);
         return result;
     }
+    /** 使用公开 Stooq CSV 读取美股日线；新闻和公告状态明确不可用。 */
+    private StockResearchData loadUs(String ticker, String asOf, LocalDate cutoff) {
+        try {
+            String raw = client.get("https://stooq.com/q/d/l/?s=" + ticker + ".us&i=d&d1=" + cutoff.minusDays(180) + "&d2=" + cutoff);
+            List<DailyBar> bars = new ArrayList<DailyBar>();
+            for (String line : raw.split("\\r?\\n")) {
+                if (line.startsWith("Date,") || line.trim().isEmpty()) continue;
+                String[] fields = line.split(","); if (fields.length < 6) continue;
+                LocalDate date = LocalDate.parse(fields[0]); if (date.isAfter(cutoff)) continue;
+                bars.add(new DailyBar(fields[0], fields[1], fields[4], fields[2], fields[3], fields[5]));
+            }
+            if (bars.isEmpty()) throw new IllegalArgumentException("美股窗口内无数据");
+            Collections.sort(bars, Comparator.comparing(DailyBar::getDate));
+            DailyBar last = bars.get(bars.size() - 1);
+            DataFeed<DailyBar> history = feed("https://stooq.com/q/d/l/", raw, true, "USD;UNADJUSTED;CSV;VOLUME_SHARES_WHEN_PRESENT", bars);
+            DataFeed<MarketArticle> unavailableNews = new DataFeed<MarketArticle>("UNCONFIGURED", "", Instant.now(clock).toString(), DataStatus.UNAVAILABLE, true, "US_NEWS_NOT_CONFIGURED", Collections.<MarketArticle>emptyList());
+            return new StockResearchData(asOf, DataMode.LIVE, new MarketSnapshot("US:" + ticker.toUpperCase(Locale.ROOT), last.getClose().toPlainString(), last.getDate(), "STOOQ_DAILY_UNADJUSTED"), history, unavailableNews, unavailableNews, TechnicalIndicators.calculate(bars));
+        } catch (Exception ex) { throw new DataAccessException("美股行情不可用，未回退 SAMPLE", ex); }
+    }
+
     /** 规范沪深 A 股身份；显式前后缀必须与代码匹配，首版不接指数、北交所与美股。 */
     public static String normalizeSymbol(String input) {
         if (input == null) { throw new IllegalArgumentException("证券代码不能为空"); }
         String value = input.trim().toLowerCase(Locale.ROOT);
+        if (value.startsWith("us:")) {
+            String ticker = value.substring(3);
+            if (!ticker.matches("[a-z]{1,5}")) throw new IllegalArgumentException("美股代码格式无效");
+            return "us:" + ticker;
+        }
+        if (value.endsWith(".us")) {
+            String ticker = value.substring(0, value.length() - 3);
+            if (!ticker.matches("[a-z]{1,5}")) throw new IllegalArgumentException("美股代码格式无效");
+            return "us:" + ticker;
+        }
         String prefix = "";
-        if (value.startsWith("sh") || value.startsWith("sz")) { prefix = value.substring(0,2); value = value.substring(2); }
+        if (value.startsWith("sh") || value.startsWith("sz") || value.startsWith("bj")) { prefix = value.substring(0,2); value = value.substring(2); }
         if (value.endsWith(".sh") || value.endsWith(".sz")) {
             String suffix = value.substring(value.length() - 2);
             if (!prefix.isEmpty() && !prefix.equals(suffix)) { throw new IllegalArgumentException("市场前后缀冲突"); }
             prefix = suffix; value = value.substring(0, value.length() - 3);
         }
-        if (!value.matches("(60[0-9]{4}|68[0-9]{4}|00[0-9]{4}|30[0-9]{4})")) {
-            throw new IllegalArgumentException("首版只支持沪深 A 股六位代码");
+        if (!value.matches("(60[0-9]{4}|68[0-9]{4}|00[0-9]{4}|30[0-9]{4}|8[0-9]{5}|4[0-9]{5})")) {
+            throw new IllegalArgumentException("仅支持沪深/北交所 A 股或 us: 美股代码");
         }
-        String market = value.startsWith("6") ? "sh" : "sz";
+        String market = value.startsWith("6") ? "sh" : (value.startsWith("8") || value.startsWith("4") ? "bj" : "sz");
         if (!prefix.isEmpty() && !prefix.equals(market)) { throw new IllegalArgumentException("市场与证券代码不匹配"); }
         return value;
     }
