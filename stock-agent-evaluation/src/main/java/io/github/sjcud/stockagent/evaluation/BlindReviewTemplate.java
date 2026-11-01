@@ -15,7 +15,7 @@ public final class BlindReviewTemplate {
         for (EvaluationDataset.Question question : dataset.getQuestions()) {
             csv.append(escape(dataset.getVersion())).append(',')
                     .append(escape(question.getId())).append(',')
-                    .append(escape(question.getText())).append(",,,\n");
+                    .append(escape(question.getText())).append(",,,,\n");
         }
         Files.createDirectories(target.toAbsolutePath().getParent());
         Files.write(target, csv.toString().getBytes(StandardCharsets.UTF_8));

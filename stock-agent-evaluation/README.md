@@ -83,7 +83,7 @@ MySQL 用户需具备测试表的建表、插入、查询、删除权限。测�
 
 ## 人工盲评
 
-可用 `BlindReviewTemplate.write(path, EvaluationDataset.load("/evaluation/stock-agent-synthetic-v2-hard.json"))` 生成不含标准答案、相关文档和事实标注的 CSV。评审者只填写 `answer`、`citation_ok`、`faithful` 和 `notes`，结果再与机器规则分数分开分析，避免把标注泄漏给回答者。
+可用 `BlindReviewTemplate.write(path, EvaluationDataset.load("/evaluation/stock-agent-synthetic-v2-hard.json"))` 生成不含标准答案、相关文档和事实标注的 CSV。评审者只填写 `answer`、`citation_ok`、`faithful` 和 `notes`，结果再与机器规则分数分开分析，避免把标注泄漏给回答者。`BlindReviewAggregator` 会校验七列格式，统计引用通过率、忠实度通过率，并在有多位评审者时计算逐问题成对一致率。
 
 ## 尚未覆盖
 

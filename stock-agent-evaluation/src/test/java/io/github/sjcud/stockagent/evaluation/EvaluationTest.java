@@ -29,6 +29,12 @@ public class EvaluationTest {
         String csv = new String(java.nio.file.Files.readAllBytes(target), java.nio.charset.StandardCharsets.UTF_8);
         assertTrue(csv.contains("citation_ok,faithful,notes"));
         assertFalse(csv.contains("30亿元"));
+        java.nio.file.Path reviewer = java.nio.file.Files.createTempFile("blind-review-filled", ".csv");
+        java.nio.file.Files.write(reviewer, csv.replace(",,,,\n", ",answer,true,true,\n").getBytes(java.nio.charset.StandardCharsets.UTF_8));
+        BlindReviewAggregator.Result summary = new BlindReviewAggregator().aggregate(Arrays.asList(reviewer));
+        assertEquals(6, summary.totalReviews);
+        assertEquals(1.0, summary.citationPassRate, 1e-9);
+        assertEquals(1.0, summary.faithfulPassRate, 1e-9);
     }
 
     @Test
