@@ -1,0 +1,72 @@
+name: stock-research-agent
+services:
+  mysql:
+    image: mysql:8.4
+    environment:
+      MYSQL_DATABASE: stock_agent
+      MYSQL_USER: stock
+      MYSQL_PASSWORD: ${STOCK_AGENT_MYSQL_PASSWORD:-stock-local-change-me}
+      MYSQL_ROOT_PASSWORD: ${STOCK_AGENT_MYSQL_ROOT_PASSWORD:-root-local-change-me}
+    volumes:
+      - mysql-data:/var/lib/mysql
+      - ./stock-agent-runtime/src/main/resources/db/migration/V1__baseline.sql:/docker-entrypoint-initdb.d/001-baseline.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "MYSQL_PWD=\"$${MYSQL_ROOT_PASSWORD}\" mysql -uroot --protocol=tcp -h127.0.0.1 -N -e \"SELECT 1\" >/dev/null"]
+      interval: 5s
+      timeout: 5s
+      retries: 24
+      start_period: 20s
+    restart: unless-stopped
+  qdrant:
+    image: qdrant/qdrant:v1.12.4
+    volumes:
+      - qdrant-data:/qdrant/storage
+    healthcheck:
+      test: ["CMD", "bash", "-ec", "exec 3<>/dev/tcp/127.0.0.1/6333; printf \"GET /readyz HTTP/1.0\\r\\nHost: localhost\\r\\n\\r\\n\" >&3; read -r status <&3; [[ \"$$status\" == *\" 200 \"* ]]"]
+      interval: 5s
+      timeout: 4s
+      retries: 24
+      start_period: 10s
+    restart: unless-stopped
+  app:
+    build: .
+    ports:
+      - "127.0.0.1:${STOCK_AGENT_HTTP_PORT:-8080}:8080"
+    environment:
+      SPRING_PROFILES_ACTIVE: local
+      SERVER_ADDRESS: 0.0.0.0
+      # 容器内部端口保持8080，宿主映射由STOCK_AGENT_HTTP_PORT控制。
+      SERVER_PORT: 8080
+      STOCK_AGENT_CHAT_API_KEY: ${STOCK_AGENT_CHAT_API_KEY:-}
+      STOCK_AGENT_CHAT_BASE_URL: ${STOCK_AGENT_CHAT_BASE_URL:-https://api.deepseek.com}
+      STOCK_AGENT_CHAT_MODEL: ${STOCK_AGENT_CHAT_MODEL:-deepseek-chat}
+      STOCK_AGENT_CHAT_MAX_TOKENS: ${STOCK_AGENT_CHAT_MAX_TOKENS:-2048}
+      STOCK_AGENT_CHAT_THINKING_MODE: ${STOCK_AGENT_CHAT_THINKING_MODE:-}
+      STOCK_AGENT_EMBEDDING_API_KEY: ${STOCK_AGENT_EMBEDDING_API_KEY:-}
+      STOCK_AGENT_EMBEDDING_BASE_URL: ${STOCK_AGENT_EMBEDDING_BASE_URL:-https://api.openai.com}
+      STOCK_AGENT_EMBEDDING_MODEL: ${STOCK_AGENT_EMBEDDING_MODEL:-text-embedding-3-small}
+      STOCK_AGENT_EMBEDDING_DIMENSIONS: ${STOCK_AGENT_EMBEDDING_DIMENSIONS:-1536}
+      STOCK_AGENT_QDRANT_ENABLED: "true"
+      STOCK_AGENT_QDRANT_HOST: qdrant
+      STOCK_AGENT_QDRANT_GRPC_PORT: 6334
+      STOCK_AGENT_QDRANT_COLLECTION: ${STOCK_AGENT_QDRANT_COLLECTION:-stock_agent_documents}
+      STOCK_AGENT_RAG_CHUNK_SIZE: ${STOCK_AGENT_RAG_CHUNK_SIZE:-800}
+      STOCK_AGENT_MYSQL_ENABLED: "true"
+      STOCK_AGENT_MYSQL_URL: jdbc:mysql://mysql:3306/stock_agent
+      STOCK_AGENT_MYSQL_USER: stock
+      STOCK_AGENT_MYSQL_PASSWORD: ${STOCK_AGENT_MYSQL_PASSWORD:-stock-local-change-me}
+      STOCK_AGENT_REQUIRE_MODELS: "true"
+      STOCK_AGENT_DATA_MODE: ${STOCK_AGENT_DATA_MODE:-SAMPLE}
+      STOCK_AGENT_DATA_CONNECT_TIMEOUT_MS: ${STOCK_AGENT_DATA_CONNECT_TIMEOUT_MS:-3000}
+      STOCK_AGENT_DATA_READ_TIMEOUT_MS: ${STOCK_AGENT_DATA_READ_TIMEOUT_MS:-5000}
+      STOCK_AGENT_DATA_REQUESTS_PER_MINUTE: ${STOCK_AGENT_DATA_REQUESTS_PER_MINUTE:-60}
+    depends_on:
+      mysql:
+        condition: service_healthy
+      qdrant:
+        condition: service_healthy
+    stop_grace_period: 30s
+    restart: unless-stopped
+volumes:
+  mysql-data:
+  qdrant-data:

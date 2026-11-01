@@ -1,0 +1,17 @@
+# 每一级目录先拒绝，再放行构建所需项；避免放行父目录时连带包含本地数据。
+*
+!pom.xml
+!stock-agent-*/
+stock-agent-*/*
+!stock-agent-*/pom.xml
+!stock-agent-*/src/
+stock-agent-*/src/*
+!stock-agent-*/src/main/
+!stock-agent-*/src/main/**
+!deployment/
+deployment/*
+!deployment/HealthProbe.java
+# 不按data目录名全局排除，Java源码包本身也叫data。
+**/.env*
+**/node_modules/
+**/target/

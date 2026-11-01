@@ -12,6 +12,7 @@
 - Harness：调用次数预算、估算 Token 预算、截止时间检查、有限重试基础能力；多角色共享请求预算，超时和失败触发其他任务取消。
 - MySQL：运行记录 JDBC Repository 和迁移脚本；Web 创建运行接口当前默认使用内存仓储，多角色轨迹只随响应回传。
 - Spring AI Alibaba `ReactAgent` 最小工厂及工具循环学习探针。
+- 本地部署：三服务Compose、可执行JAR、启动/检查/停止/显式清理脚本、存活/就绪检查和日志脱敏。
 
 当前多分析师是提示词角色，调度采用 Java 执行器，尚未通过 Alibaba Graph 构建完整协作图。P9 已接入日线、技术指标及最近资讯；完整财报、实时分时和社交情绪样本尚未接入。只有一个收盘价时，角色应说明无法计算 MACD、RSI 等指标。它们不会自动获得不存在的数据，也不会执行真实交易。
 
@@ -34,6 +35,10 @@
 RAG 保持一个模块，内部通过接口隔离解析器、Embedding 和向量存储。MySQL 是业务记录存储，Qdrant 是首版向量存储。
 
 ## 运行
+
+P12已提供三服务一键启动：先保留或从`.env.example`创建`.env`并配置模型，然后运行`./scripts/dev.sh start`，默认地址`http://127.0.0.1:8080`。`check`检查就绪，`stop`保留数据卷。Compose与以前的手工容器数据独立，详细步骤、端口冲突、恢复和清理见[本地部署说明](DEPLOYMENT.md)。
+
+以下为宿主JVM开发运行方式：
 
 要求 JDK 21、Maven 3.8+。先按 [.env.example](.env.example) 配置模型和 Qdrant，不要提交真实密钥。
 
@@ -105,7 +110,7 @@ QDRANT_INTEGRATION=true mvn -pl stock-agent-rag -am \
 
 模型 Base URL 和路径兼容配置参见 [TROUBLESHOOTING.md](TROUBLESHOOTING.md)。DashScope Embedding 保留完整 `/compatible-mode/v1` Base URL，并显式设置 `embeddingsPath("/embeddings")`。
 
-P11 已增加固定合成数据集、检索参数对比、回答规则和工具调度契约评测；运行方式和学习入口见 [评测模块说明](stock-agent-evaluation/README.md)。下一阶段为 P12 运行与部署；同时保留 P6/P7 中尚未完成的会话持久化、模型 HTTP 超时、阶段预算和上下文压缩任务。前端沿用已确定的浅色聊天交互设计。
+P11 已增加固定合成数据集、检索参数对比、回答规则和工具调度契约评测；运行方式和学习入口见 [评测模块说明](stock-agent-evaluation/README.md)。P12本地运行与部署已完成，后续优先补齐P6/P7的遗留任务；同时保留 P6/P7 中尚未完成的会话持久化、模型 HTTP 超时、阶段预算和上下文压缩任务。前端沿用已确定的浅色聊天交互设计。
 
 ## P9 市场数据与研究
 

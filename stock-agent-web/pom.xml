@@ -9,6 +9,8 @@
   </parent>
   <artifactId>stock-agent-web</artifactId>
   <dependencies>
+    <dependency><groupId>org.springframework.boot</groupId><artifactId>spring-boot-starter-actuator</artifactId></dependency>
+    <dependency><groupId>com.mysql</groupId><artifactId>mysql-connector-j</artifactId></dependency>
     <dependency><groupId>io.github.sjcud.stockagent</groupId><artifactId>stock-agent-evaluation</artifactId><version>${project.version}</version><scope>test</scope></dependency>
     <dependency>
       <groupId>io.github.sjcud.stockagent</groupId>
@@ -66,6 +68,7 @@
         <groupId>org.springframework.boot</groupId>
         <artifactId>spring-boot-maven-plugin</artifactId>
         <version>${spring-boot.version}</version>
+        <executions><execution><goals><goal>repackage</goal></goals></execution></executions>
         <configuration>
           <mainClass>io.github.sjcud.stockagent.web.StockAgentWebApplication</mainClass>
         </configuration>
