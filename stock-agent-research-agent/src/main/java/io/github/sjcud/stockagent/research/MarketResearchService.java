@@ -1,6 +1,7 @@
 package io.github.sjcud.stockagent.research;
 
 import io.github.sjcud.stockagent.data.StockDataProvider;
+import io.github.sjcud.stockagent.data.PriceAdjustmentMode;
 import io.github.sjcud.stockagent.data.StockResearchData;
 
 /** 应用编排：由服务端数据策略取数，再进入既有多角色协作流程。 */
@@ -20,9 +21,13 @@ public class MarketResearchService {
     }
     /** 相同行情提供器的引擎对照，不额外触发重复取数。 */
     public MarketResearchAnswer ask(String question, String symbol, String asOf, ResearchMode mode, ResearchEngine engine) throws Exception {
-        if (engine == null) throw new IllegalArgumentException("引擎不能为空");
+        return ask(question, symbol, asOf, mode, engine, PriceAdjustmentMode.UNADJUSTED);
+    }
+    /** 托管研究按服务端复权口径加载行情，不能信任客户端传入价格。 */
+    public MarketResearchAnswer ask(String question, String symbol, String asOf, ResearchMode mode, ResearchEngine engine, PriceAdjustmentMode adjustment) throws Exception {
+        if (engine == null || adjustment == null) throw new IllegalArgumentException("引擎和复权口径不能为空");
         if (question == null || question.trim().isEmpty() || mode == null) { throw new IllegalArgumentException("问题和模式不能为空"); }
-        StockResearchData data = provider.load(symbol,asOf);
+        StockResearchData data = provider.load(symbol,asOf, adjustment);
         return new MarketResearchAnswer(data,research.ask(question,data,mode,ResearchProgressListener.NONE,"",engine));
     }
 }

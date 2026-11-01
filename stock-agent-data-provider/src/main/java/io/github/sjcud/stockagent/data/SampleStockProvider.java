@@ -7,6 +7,11 @@ import java.util.*;
 public class SampleStockProvider implements StockDataProvider {
     /** 固定样例截止日期。 */
     public static final String LAST_SAMPLE_DATE = "2026-10-30";
+    /** 样例复权不伪造公司行为，明确返回单位因子为空。 */
+    @Override public StockResearchData load(String symbol, String asOf, PriceAdjustmentMode adjustment) {
+        if (adjustment != null && adjustment != PriceAdjustmentMode.UNADJUSTED) throw new UnsupportedOperationException("SAMPLE不提供复权历史");
+        return load(symbol, asOf);
+    }
     /** 返回固定快照，只接受有样例覆盖的标的和日期。 */
     public MarketSnapshot snapshot(String symbol, String asOf) { return load(symbol, asOf).getSnapshot(); }
     /** 加载固定合成日线与资讯，所有来源均明确标记 SAMPLE。 */

@@ -4,6 +4,7 @@ import java.math.BigDecimal;
 import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.Map;
+import java.util.List;
 
 /** 一次按研究日取数的完整结果，结构化行情与资讯分组分别保留来源。 */
 public final class StockResearchData {
@@ -13,7 +14,7 @@ public final class StockResearchData {
     private final DataMode mode;
     /** 最近有效日线的快照。 */
     private final MarketSnapshot snapshot;
-    /** 未复权日线窗口。 */
+    /** 按请求复权口径返回的日线窗口。 */
     private final DataFeed<DailyBar> history;
     /** 最近新闻窗口，可能不完整。 */
     private final DataFeed<MarketArticle> news;
@@ -21,13 +22,25 @@ public final class StockResearchData {
     private final DataFeed<MarketArticle> announcements;
     /** 确定性代码计算的指标，缺少足够日线时省略对应键。 */
     private final Map<String, BigDecimal> indicators;
+    /** 日线价格口径，模型提示必须显式披露。 */
+    private final PriceAdjustmentMode adjustmentMode;
+    /** 从价格序列推导的公司行为因子，可能为空。 */
+    private final List<CorporateAction> corporateActions;
     /** 创建不可变的取数结果。 */
     public StockResearchData(String requestedAsOf, DataMode mode, MarketSnapshot snapshot,
             DataFeed<DailyBar> history, DataFeed<MarketArticle> news, DataFeed<MarketArticle> announcements,
             Map<String, BigDecimal> indicators) {
-        this.requestedAsOf = requestedAsOf; this.mode = mode; this.snapshot = snapshot;
-        this.history = history; this.news = news; this.announcements = announcements;
-        this.indicators = Collections.unmodifiableMap(new LinkedHashMap<String, BigDecimal>(indicators));
+        this(requestedAsOf, mode, snapshot, history, news, announcements, indicators,
+                PriceAdjustmentMode.UNADJUSTED, Collections.<CorporateAction>emptyList());
+    }
+    /** 创建包含复权口径和公司行为的完整市场结果。 */
+    public StockResearchData(String requestedAsOf, DataMode mode, MarketSnapshot snapshot,
+            DataFeed<DailyBar> history, DataFeed<MarketArticle> news, DataFeed<MarketArticle> announcements,
+            Map<String, BigDecimal> indicators, PriceAdjustmentMode adjustmentMode, List<CorporateAction> actions) {
+        this.requestedAsOf = requestedAsOf; this.mode = mode; this.snapshot = snapshot; this.history = history;
+        this.news = news; this.announcements = announcements; this.indicators = Collections.unmodifiableMap(new LinkedHashMap<String, BigDecimal>(indicators));
+        this.adjustmentMode = adjustmentMode == null ? PriceAdjustmentMode.UNADJUSTED : adjustmentMode;
+        this.corporateActions = Collections.unmodifiableList(new java.util.ArrayList<CorporateAction>(actions));
     }
     /** 返回请求截止日。 */
     public String getRequestedAsOf() { return requestedAsOf; }
@@ -43,4 +56,8 @@ public final class StockResearchData {
     public DataFeed<MarketArticle> getAnnouncements() { return announcements; }
     /** 返回代码计算的指标。 */
     public Map<String, BigDecimal> getIndicators() { return indicators; }
+    /** 返回价格复权口径。 */
+    public PriceAdjustmentMode getAdjustmentMode() { return adjustmentMode; }
+    /** 返回公司行为因子列表。 */
+    public List<CorporateAction> getCorporateActions() { return corporateActions; }
 }

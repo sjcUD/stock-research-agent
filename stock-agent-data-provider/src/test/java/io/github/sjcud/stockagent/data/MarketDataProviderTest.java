@@ -74,4 +74,27 @@ public class MarketDataProviderTest {
         if (url.contains("anotice")) { return announcements; }
         return news;
     }
+
+    @Test
+    public void adjustedModeKeepsVolumeInSharesAndDerivesCorporateAction() {
+        String raw = "{\"code\":0,\"data\":{\"sh600519\":{\"qfqday\":[[\"2026-10-29\",\"10\",\"10\",\"11\",\"9\",\"1000\"],[\"2026-10-30\",\"5\",\"5\",\"6\",\"4\",\"2000\"]],\"day\":[[\"2026-10-29\",\"10\",\"10\",\"11\",\"9\",\"1000\"],[\"2026-10-30\",\"10\",\"10\",\"11\",\"9\",\"2000\"]]}}}";
+        LiveStockDataProvider provider = new LiveStockDataProvider(url -> url.contains("qfqday") ? raw : raw, java.time.Clock.fixed(java.time.Instant.parse("2026-11-01T10:00:00Z"), java.time.ZoneOffset.UTC));
+        StockResearchData data = provider.load("600519", "2026-10-30", PriceAdjustmentMode.FORWARD_ADJUSTED);
+        assertEquals(PriceAdjustmentMode.FORWARD_ADJUSTED, data.getAdjustmentMode());
+        assertEquals(new java.math.BigDecimal("2000"), data.getHistory().getItems().get(1).getVolume());
+        assertEquals(VolumeUnit.SHARES, data.getHistory().getItems().get(1).getVolumeUnit());
+        assertFalse(data.getCorporateActions().isEmpty());
+    }
+
+    @Test
+    public void pointInTimeCacheSeparatesDateAndAdjustmentAndAvoidsRefetch() {
+        java.util.concurrent.atomic.AtomicInteger calls = new java.util.concurrent.atomic.AtomicInteger();
+        PointInTimeDataCache cache = new PointInTimeDataCache(2, java.time.Duration.ofMinutes(5), clock);
+        LiveStockDataProvider provider = new LiveStockDataProvider(url -> { calls.incrementAndGet(); return response(url); }, clock, cache);
+        provider.load("600519", "2026-10-30", PriceAdjustmentMode.UNADJUSTED);
+        provider.load("600519", "2026-10-30", PriceAdjustmentMode.UNADJUSTED);
+        assertEquals(3, calls.get()); // 行情、新闻、公告各请求一次；第二次完全命中缓存。
+        assertEquals(1, cache.size());
+    }
+
 }

@@ -20,10 +20,21 @@ public class MarketDataController {
     public MarketDataController(StockDataProvider provider, ObjectProvider<MultiResearchService> research) {
         this.provider = provider; this.research = research;
     }
+    /** 兼容控制器单测和旧内嵌调用，默认未复权。 */
+    public StockResearchData data(String symbol, String asOf) {
+        try { return provider.load(symbol, asOf); }
+        catch (IllegalArgumentException | DateTimeException exception) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,"证券代码或日终日期不在支持范围",exception);
+        } catch (DataAccessException exception) {
+            throw new ResponseStatusException(HttpStatus.BAD_GATEWAY,"真实行情不可用，未回退样例",exception);
+        }
+    }
+
     /** 只读查询市场数据，返回实际行情日、分组状态和来源指纹。 */
     @GetMapping("/api/market/data")
-    public StockResearchData data(@RequestParam("symbol") String symbol, @RequestParam("asOf") String asOf) {
-        try { return provider.load(symbol,asOf); }
+    public StockResearchData data(@RequestParam("symbol") String symbol, @RequestParam("asOf") String asOf,
+            @RequestParam(value = "adjustment", defaultValue = "UNADJUSTED") PriceAdjustmentMode adjustment) {
+        try { return provider.load(symbol,asOf, adjustment); }
         catch (IllegalArgumentException | DateTimeException exception) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST,"证券代码或日终日期不在支持范围",exception);
         } catch (DataAccessException exception) {
@@ -40,7 +51,7 @@ public class MarketDataController {
         MultiResearchService service = research.getIfAvailable();
         if (service == null) { throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE,"研究模型未就绪，请检查模型及Qdrant配置"); }
         try {
-            return new MarketResearchService(provider,service).ask(request.getQuestion(),request.getSymbol(),request.getAsOf(),request.getMode(),request.getEngine());
+            return new MarketResearchService(provider,service).ask(request.getQuestion(),request.getSymbol(),request.getAsOf(),request.getMode(),request.getEngine(),request.getAdjustment());
         } catch (IllegalArgumentException | DateTimeException exception) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST,"研究输入无效",exception);
         } catch (TimeoutException exception) {
@@ -67,8 +78,14 @@ public class MarketDataController {
         private ResearchMode mode = ResearchMode.PARALLEL;
         /** 引擎与串行/并行方式独立，默认Java执行器。 */
         private ResearchEngine engine = ResearchEngine.JAVA_EXECUTOR;
+        /** 价格复权口径，默认为供应商原始未复权价。 */
+        private PriceAdjustmentMode adjustment = PriceAdjustmentMode.UNADJUSTED;
         /** 返回引擎。 */
         public ResearchEngine getEngine() { return engine; }
+        /** 返回复权口径。 */
+        public PriceAdjustmentMode getAdjustment() { return adjustment; }
+        /** 设置复权口径。 */
+        public void setAdjustment(PriceAdjustmentMode adjustment) { this.adjustment = adjustment; }
         /** 设置对照引擎。 */
         public void setEngine(ResearchEngine engine) { this.engine = engine; }
         /** 返回问题。 */

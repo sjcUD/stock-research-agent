@@ -11,7 +11,7 @@ import java.util.*;
 
 /**
  * Java HTTP 在线适配：腾讯未复权日线、东方财富最近新闻与公告列表。
- * 网页数据协议可能变化；资讯只覆盖最近窗口，不承诺完整历史或财报覆盖。
+ * 网页数据协议可能变化；资讯只覆盖最近窗口，不承诺完整历史、财报全文或社交情绪覆盖。
  */
 public class LiveStockDataProvider implements StockDataProvider {
     /** 腾讯日线端点，只读取 day，不读取响应内的当前实时 qt 快照。 */
@@ -24,32 +24,56 @@ public class LiveStockDataProvider implements StockDataProvider {
     private final HttpTextClient client;
     /** 注入时钟以确定性验证截止日期。 */
     private final Clock clock;
+    /** 只缓存完整 point-in-time 结果，避免同一研究日重复请求供应商。 */
+    private final PointInTimeDataCache cache;
     /** JSON 解析器在构造后不修改配置，允许并发读取。 */
     private final ObjectMapper json = new ObjectMapper();
     /** 注入网络适配器与时钟。 */
     public LiveStockDataProvider(HttpTextClient client, Clock clock) {
-        if (client == null || clock == null) { throw new IllegalArgumentException("取数依赖不能为空"); }
-        this.client = client; this.clock = clock.withZone(ZoneId.of("Asia/Shanghai"));
+        this(client, clock, new PointInTimeDataCache(64, java.time.Duration.ofMinutes(5), clock));
+    }
+    /** 注入缓存策略，测试可使用短TTL或禁用式单条缓存。 */
+    public LiveStockDataProvider(HttpTextClient client, Clock clock, PointInTimeDataCache cache) {
+        if (client == null || clock == null || cache == null) { throw new IllegalArgumentException("取数依赖不能为空"); }
+        this.client = client; this.clock = clock.withZone(ZoneId.of("Asia/Shanghai")); this.cache = cache;
     }
     /** 加载按日终截止的数据；核心行情失败中止，辅助资讯失败显式降级。 */
     @Override public StockResearchData load(String symbol, String asOf) {
+        return load(symbol, asOf, PriceAdjustmentMode.UNADJUSTED);
+    }
+    /** 加载供应商复权日线，并用同一截止窗口的未复权序列推导公司行为因子。 */
+    @Override public StockResearchData load(String symbol, String asOf, PriceAdjustmentMode adjustment) {
         String normalized = normalizeSymbol(symbol);
         LocalDate cutoff = LocalDate.parse(asOf);
         LocalDate today = LocalDate.now(clock);
         if (cutoff.isAfter(today) || (cutoff.equals(today) && LocalTime.now(clock).isBefore(LocalTime.of(16, 0)))) {
             throw new IllegalArgumentException("只支持已经结束并完成日线更新的日终研究日期");
         }
+        PriceAdjustmentMode selected = adjustment == null ? PriceAdjustmentMode.UNADJUSTED : adjustment;
+        StockResearchData cached = cache.get(normalized, asOf, selected);
+        if (cached != null) return cached;
         DataFeed<DailyBar> history;
-        try { history = history(normalized, cutoff); }
+        try { history = history(normalized, cutoff, selected); }
         catch (Exception exception) { throw new DataAccessException("LIVE 行情不可用，未回退 SAMPLE", exception); }
         DailyBar last = history.getItems().get(history.getItems().size() - 1);
         if (LocalDate.parse(last.getDate()).isBefore(cutoff.minusDays(14))) {
             throw new DataAccessException("最近行情超过14天，请核查停牌或数据时效", null);
         }
-        MarketSnapshot snapshot = new MarketSnapshot(normalized, last.getClose().toPlainString(), last.getDate(), "TENCENT_DAILY_UNADJUSTED");
-        return new StockResearchData(asOf, DataMode.LIVE, snapshot, history,
+        MarketSnapshot snapshot = new MarketSnapshot(normalized, last.getClose().toPlainString(), last.getDate(), "TENCENT_DAILY_" + selected.name());
+        List<CorporateAction> actions = Collections.emptyList();
+        if (selected != PriceAdjustmentMode.UNADJUSTED) {
+            try {
+                DataFeed<DailyBar> raw = history(normalized, cutoff, PriceAdjustmentMode.UNADJUSTED);
+                actions = inferActions(raw.getItems(), history.getItems());
+            } catch (Exception exception) {
+                throw new DataAccessException("复权基准行情不可用，未返回不完整结果", exception);
+            }
+        }
+        StockResearchData result = new StockResearchData(asOf, DataMode.LIVE, snapshot, history,
                 articles(normalized, cutoff, false), articles(normalized, cutoff, true),
-                TechnicalIndicators.calculate(history.getItems()));
+                TechnicalIndicators.calculate(history.getItems()), selected, actions);
+        cache.put(normalized, asOf, selected, result);
+        return result;
     }
     /** 规范沪深 A 股身份；显式前后缀必须与代码匹配，首版不接指数、北交所与美股。 */
     public static String normalizeSymbol(String input) {
@@ -70,13 +94,15 @@ public class LiveStockDataProvider implements StockDataProvider {
         return value;
     }
     /** 校验日线结构、剔除未来数据、拒绝重复日期并按交易日升序排列。 */
-    private DataFeed<DailyBar> history(String symbol, LocalDate cutoff) throws Exception {
+    private DataFeed<DailyBar> history(String symbol, LocalDate cutoff, PriceAdjustmentMode adjustment) throws Exception {
         String identifier = (symbol.startsWith("6") ? "sh" : "sz") + symbol;
-        String query = identifier + ",day," + cutoff.minusDays(180) + "," + cutoff + ",180,";
+        String series = adjustment == PriceAdjustmentMode.FORWARD_ADJUSTED ? "qfqday"
+                : adjustment == PriceAdjustmentMode.BACKWARD_ADJUSTED ? "hfqday" : "day";
+        String query = identifier + "," + series + "," + cutoff.minusDays(180) + "," + cutoff + ",180,";
         String raw = client.get(QUOTES + "?param=" + encode(query));
         JsonNode root = json.readTree(raw);
         if (root.path("code").asInt(-1) != 0) { throw new IllegalArgumentException("日线业务状态异常"); }
-        JsonNode rows = root.path("data").path(identifier).path("day");
+        JsonNode rows = root.path("data").path(identifier).path(series);
         if (!rows.isArray()) { throw new IllegalArgumentException("缺少未复权日线字段"); }
         List<DailyBar> bars = new ArrayList<DailyBar>(); Set<String> dates = new HashSet<String>();
         for (JsonNode row : rows) {
@@ -84,12 +110,29 @@ public class LiveStockDataProvider implements StockDataProvider {
             LocalDate date = LocalDate.parse(row.get(0).asText());
             if (date.isAfter(cutoff) || date.isBefore(cutoff.minusDays(180))) { continue; }
             if (!dates.add(date.toString())) { throw new IllegalArgumentException("重复日线"); }
-            bars.add(new DailyBar(date.toString(), row.get(1).asText(), row.get(2).asText(), row.get(3).asText(), row.get(4).asText()));
+            String volume = row.size() > 5 ? row.get(5).asText() : null;
+            bars.add(new DailyBar(date.toString(), row.get(1).asText(), row.get(2).asText(), row.get(3).asText(), row.get(4).asText(), volume));
         }
         Collections.sort(bars, Comparator.comparing(DailyBar::getDate));
         if (bars.isEmpty()) { throw new IllegalArgumentException("窗口内无有效日线"); }
-        return feed(QUOTES, raw, false, "CNY;UNADJUSTED;WINDOW_180_CALENDAR_DAYS;NO_VOLUME_NORMALIZATION", bars);
+        return feed(QUOTES, raw, false, "CNY;" + adjustment.name() + ";WINDOW_180_CALENDAR_DAYS;VOLUME_SHARES_WHEN_PRESENT", bars);
     }
+    /** 按相同交易日比较复权与未复权收盘价，记录突变因子而不猜测分红/送转类型。 */
+    private List<CorporateAction> inferActions(List<DailyBar> raw, List<DailyBar> adjusted) {
+        Map<String,DailyBar> before = new HashMap<String,DailyBar>();
+        for (DailyBar bar : raw) before.put(bar.getDate(), bar);
+        List<CorporateAction> actions = new ArrayList<CorporateAction>();
+        java.math.BigDecimal previous = null;
+        for (DailyBar bar : adjusted) {
+            DailyBar original = before.get(bar.getDate()); if (original == null) continue;
+            java.math.BigDecimal ratio = bar.getClose().divide(original.getClose(), 8, java.math.RoundingMode.HALF_UP);
+            if (previous != null && ratio.subtract(previous).abs().compareTo(new java.math.BigDecimal("0.001")) > 0)
+                actions.add(new CorporateAction(bar.getDate(), ratio.divide(previous, 8, java.math.RoundingMode.HALF_UP), "ADJUSTMENT_RATIO_CHANGE;TYPE_UNSPECIFIED"));
+            previous = ratio;
+        }
+        return actions;
+    }
+
     /** 最近资讯失败只影响该分组；不将接口失败描述为没有新闻或公告。 */
     private DataFeed<MarketArticle> articles(String symbol, LocalDate cutoff, boolean announcement) {
         String source = announcement ? ANNOUNCEMENTS : NEWS;
